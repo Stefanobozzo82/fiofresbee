@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d0d1a">
+<title>Fio Fresbee</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overscroll-behavior:none; }
+  body {
+    background:#0d0d1a;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; font-family:'Courier New', monospace; color:#fff;
+    user-select:none; -webkit-user-select:none; touch-action:manipulation;
+  }
+  h1 {
+    font-size:clamp(18px,4vw,32px); letter-spacing:4px; margin:10px 0 4px;
+    color:#ffd23f; text-shadow:3px 3px 0 #d14b1f, 6px 6px 0 rgba(0,0,0,.4);
+    text-transform:uppercase;
+  }
+  .sub { color:#7ec8e3; font-size:12px; letter-spacing:2px; margin-bottom:10px; }
+  #wrap { position:relative; line-height:0; }
+  canvas {
+    border:4px solid #2a2a4a; border-radius:8px;
+    box-shadow:0 0 40px rgba(255,210,63,.15);
+    image-rendering:pixelated;
+    background:#87ceeb;
+    max-width:96vw; max-height:70vh;
+  }
+  #help { margin-top:10px; font-size:12px; color:#aaa; letter-spacing:1px; text-align:center; line-height:1.7; }
+  #help b { color:#ffd23f; }
+
+  /* ---- pulsante schermo intero ---- */
+  #fsBtn {
+    position:absolute; top:12px; right:12px; z-index:60;
+    width:44px; height:44px; border-radius:10px;
+    border:2px solid #ffd23f; background:rgba(26,26,51,.75);
+    color:#ffd23f; font-size:20px; cursor:pointer; line-height:1;
+  }
+  #fsBtn:hover { background:#1a1a33; }
+  #trBtn {
+    position:absolute; top:12px; right:64px; z-index:60;
+    width:44px; height:44px; border-radius:10px;
+    border:2px solid #7ec8e3; background:rgba(26,26,51,.75);
+    font-size:19px; cursor:pointer; line-height:1;
+  }
+  #trBtn:hover { background:#1a1a33; }
+
+  /* ---- controlli touch sovrapposti al canvas ---- */
+  /* pulsanti più grandi e staccati dal bordo, per non litigare con i gesti "indietro" del telefono */
+  /* bottom in vh (piccolo): in schermo intero #wrap riempie tutta la viewport, quindi i comandi
+     restano incollati al bordo inferiore, nella fascia di sabbia sotto i piedi del lanciatore */
+  .pad { display:none; position:absolute; bottom:clamp(4px, 1.5vh, 16px); z-index:55; gap:20px; }
+  /* #padL ora è una zona di tocco ampia (non un bottone): il joystick compare dove appoggi il dito */
+  #padL { left:0; bottom:0; width:50%; height:30vh; touch-action:none; }
+  #padR { right:3%; }
+  /* dimensione fissa a 84px per entrambi i comandi (richiesto esplicitamente):
+     su schermi molto bassi in orizzontale può risalire nella zona del lanciatore */
+  .pad button {
+    width:84px; height:84px;
+    border-radius:50%; border:4px solid #ffd23f;
+    background:rgba(26,26,51,.22); color:#ffd23f; font-size:30px;
+    touch-action:none; -webkit-tap-highlight-color:transparent;
+    transition: transform .08s ease, background .08s ease, box-shadow .08s ease;
+  }
+  /* feedback visivo immediato al tocco: si "schiaccia" e si illumina */
+  .pad button.pressed {
+    transform: scale(0.88);
+    background: rgba(255,210,63,.35);
+    box-shadow: 0 0 18px rgba(255,210,63,.6);
+  }
+  @media (pointer:coarse) { .pad { display:flex; } }
+
+  /* ---- joystick virtuale "flottante": compare dove tocchi dentro la zona #padL ---- */
+  #joyBase {
+    position:absolute; left:0; top:0;
+    width:84px; height:84px;
+    border-radius:50%; border:4px solid #ffd23f;
+    background:rgba(26,26,51,.22);
+    touch-action:none; -webkit-tap-highlight-color:transparent;
+    pointer-events:none; /* i tocchi li cattura la zona #padL, non il cerchio */
+    opacity:0;
+    transition: background .08s ease, box-shadow .08s ease, opacity .1s ease;
+  }
+  #joyBase.active { opacity:1; background:rgba(255,210,63,.18); box-shadow:0 0 18px rgba(255,210,63,.4); }
+  #joyKnob {
+    position:absolute; left:50%; top:50%; width:54%; height:54%;
+    margin-left:-27%; margin-top:-27%;
+    border-radius:50%; background:rgba(255,210,63,.65);
+    transition: transform .12s ease;
+    pointer-events:none;
+  }
+  #joyKnob.dragging { transition:none; }
+
+  /* ---- modalità schermo intero (vera o simulata su iPhone) ---- */
+  body.fs { overflow:hidden; }
+  body.fs h1, body.fs .sub, body.fs #help { display:none; }
+  body.fs #wrap, #wrap:fullscreen, #wrap:-webkit-full-screen {
+    position:fixed; inset:0; width:100vw; height:100vh; z-index:50;
+    background:#0d0d1a;
+    display:flex; align-items:center; justify-content:center;
+  }
+  body.fs canvas, #wrap:fullscreen canvas, #wrap:-webkit-full-screen canvas {
+    border:none; border-radius:0; box-shadow:none;
+    width:min(100vw, calc(100vh * 16 / 9));
+    height:min(100vh, calc(100vw * 9 / 16));
+    max-width:100vw; max-height:100vh;
+  }
+
+  /* ---- inserimento nome record ---- */
+  #nameBox {
+    display:none; position:absolute; z-index:70;
+    left:50%; top:50%; transform:translate(-50%,-50%);
+    background:#1a1a33; border:3px solid #ffd23f; border-radius:12px;
+    padding:22px 26px; text-align:center; line-height:1.6;
+    box-shadow:0 0 60px rgba(0,0,0,.7);
+  }
+  #nameBox .t { color:#ffd23f; font-weight:bold; font-size:20px; letter-spacing:2px; margin-bottom:10px; }
+  #nameInput {
+    width:180px; padding:8px; font-family:inherit; font-size:18px; text-align:center;
+    text-transform:uppercase; background:#0d0d1a; color:#fff;
+    border:2px solid #7ec8e3; border-radius:6px; outline:none;
+  }
+  #nameOk {
+    display:block; margin:12px auto 0; padding:8px 26px;
+    font-family:inherit; font-size:16px; font-weight:bold; letter-spacing:2px;
+    background:#ffd23f; color:#1a1a33; border:none; border-radius:6px; cursor:pointer;
+  }
+
+  /* ---- avviso "ruota il telefono" ---- */
+  #rotate {
+    display:none; position:fixed; inset:0; z-index:200;
+    background:#0d0d1a; color:#ffd23f;
+    flex-direction:column; align-items:center; justify-content:center;
+    font-size:22px; letter-spacing:2px; text-align:center; line-height:1.8;
+  }
+  #rotate .ph { font-size:64px; animation: ruota 1.6s ease-in-out infinite; }
+  #rotate span { color:#7ec8e3; font-size:15px; }
+  @keyframes ruota {
+    0%, 20% { transform: rotate(0deg); }
+    60%, 100% { transform: rotate(90deg); }
+  }
+  @media (pointer:coarse) and (orientation:portrait) { #rotate { display:flex; } }
+
+  /* ---- splash screen iniziale ---- */
+  #splash {
+    position:fixed; inset:0; z-index:300;
+    background:#0d0d1a;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    transition: opacity .5s ease; cursor:pointer;
+  }
+  #splash .paw { font-size:44px; margin-bottom:10px; animation: bouncePaw 1s ease-in-out infinite; }
+  @keyframes bouncePaw { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-14px);} }
+  #splash .logo {
+    font-size:clamp(26px,7vw,52px); color:#ffd23f; letter-spacing:4px;
+    text-shadow:3px 3px 0 #d14b1f, 6px 6px 0 rgba(0,0,0,.4); text-transform:uppercase;
+  }
+  #splash .bar { width:180px; height:6px; border-radius:3px; background:rgba(255,255,255,.15); margin-top:26px; overflow:hidden; }
+  #splash .bar i { display:block; height:100%; width:0%; background:#ffd23f; animation: fillbar 1.1s ease forwards; }
+  @keyframes fillbar { to { width:100%; } }
+  #splash.hide { opacity:0; pointer-events:none; }
+
+  /* ---- pulsante impostazioni ---- */
+  #setBtn {
+    position:absolute; top:12px; right:116px; z-index:60;
+    width:44px; height:44px; border-radius:10px;
+    border:2px solid #7ec8e3; background:rgba(26,26,51,.75);
+    color:#7ec8e3; font-size:19px; cursor:pointer; line-height:1;
+  }
+  #setBtn:hover { background:#1a1a33; }
+  /* ---- pulsante potenzia Fio ---- */
+  #upgBtn {
+    position:absolute; top:12px; right:168px; z-index:60;
+    width:44px; height:44px; border-radius:10px;
+    border:2px solid #ffd23f; background:rgba(26,26,51,.75);
+    color:#ffd23f; font-size:19px; cursor:pointer; line-height:1;
+  }
+  #upgBtn:hover { background:#1a1a33; }
+  /* ---- pulsante pausa (solo touch: da tastiera c'è il tasto P) ---- */
+  #pauseBtn {
+    display:none; position:absolute; top:12px; right:220px; z-index:60;
+    width:44px; height:44px; border-radius:10px;
+    border:2px solid #7eff9e; background:rgba(26,26,51,.75);
+    color:#7eff9e; font-size:19px; cursor:pointer; line-height:1;
+  }
+  #pauseBtn:hover { background:#1a1a33; }
+
+  /* ---- pannelli overlay (impostazioni, tutorial) — stesso stile del box "nuovo record" ---- */
+  .panel {
+    display:none; position:absolute; z-index:80;
+    left:50%; top:50%; transform:translate(-50%,-50%);
+    background:#1a1a33; border:3px solid #ffd23f; border-radius:12px;
+    padding:20px 26px; text-align:center; line-height:1.5;
+    box-shadow:0 0 60px rgba(0,0,0,.7);
+    max-width:88vw; max-height:82vh; overflow:auto;
+  }
+  .panel .t { color:#ffd23f; font-weight:bold; font-size:18px; letter-spacing:2px; margin-bottom:12px; }
+  .panel .t2 { color:#ffd23f; font-weight:bold; font-size:14px; letter-spacing:1px; margin:16px 0 8px; }
+  .panel .row { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:12px 0; font-size:13px; color:#fff; white-space:nowrap; }
+  .panel input[type=range] { width:140px; accent-color:#ffd23f; }
+  .panel .chipRow { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  .panel .diffBtn {
+    font-family:inherit; font-size:12px; letter-spacing:1px; padding:7px 12px; border-radius:8px;
+    border:2px solid #555a77; background:rgba(0,0,0,.2); color:#aaa; cursor:pointer;
+  }
+  .panel .diffBtn.sel { border-color:#ffd23f; color:#ffd23f; }
+  .panel button.ok {
+    display:block; margin:18px auto 0; padding:8px 26px;
+    font-family:inherit; font-size:15px; font-weight:bold; letter-spacing:2px;
+    background:#ffd23f; color:#1a1a33; border:none; border-radius:6px; cursor:pointer;
+  }
+  .panel p { font-size:13px; color:#cfd6ea; margin:0; text-align:left; }
+  .panel p b { color:#ffd23f; }
+
+  /* ---- pannello "potenzia Fio": scelta della razza + righe statistica con pulsante di acquisto ---- */
+  #upgradeBox { width:min(88vw, 460px); }
+  #upgradeBox .bones { color:#ffd23f; font-size:15px; margin-bottom:14px; text-align:center; }
+  #upgradeBox .bones b { font-size:18px; }
+  .dogRow {
+    display:flex; gap:10px; overflow-x:auto; padding:4px 2px 12px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .dogCard {
+    flex:0 0 auto; width:104px; padding:10px 8px; border-radius:10px;
+    border:2px solid #555a77; background:rgba(0,0,0,.2); text-align:center; cursor:pointer;
+  }
+  .dogCard.selected { border-color:#ffd23f; background:rgba(255,210,63,.14); }
+  .dogCard.locked { cursor:default; opacity:.55; }
+  .dogIcon {
+    width:40px; height:40px; margin:0 auto 6px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+    border:2px solid rgba(255,255,255,.25);
+  }
+  .dogName { color:#fff; font-weight:bold; font-size:12px; letter-spacing:.5px; }
+  .dogDesc { color:#9aa3c0; font-size:10px; margin-top:4px; line-height:1.35; }
+  .dogCard.locked .dogDesc { color:#7ec8e3; }
+  .statRow {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 4px; border-top:1px solid rgba(126,200,227,.2); text-align:left;
+  }
+  .statRow:first-of-type { border-top:none; }
+  .statInfo { display:flex; align-items:center; gap:10px; min-width:0; }
+  .statIcon { font-size:24px; flex:0 0 auto; }
+  .statName { color:#fff; font-weight:bold; font-size:14px; }
+  .statLvl { color:#7ec8e3; font-weight:normal; font-size:12px; }
+  .statDesc { color:#9aa3c0; font-size:11px; margin-top:2px; }
+  .statBuy {
+    flex:0 0 auto; font-family:inherit; font-size:11px; font-weight:bold; letter-spacing:.5px;
+    padding:8px 10px; border-radius:8px; border:2px solid #ffd23f; background:rgba(255,210,63,.12);
+    color:#ffd23f; cursor:pointer; white-space:nowrap;
+  }
+  .statBuy:disabled { border-color:#555a77; color:#777d99; background:transparent; cursor:default; }
+
+  /* ---- pulsante condividi (solo game over) ---- */
+  #shareBtn {
+    display:none; position:absolute; z-index:56; bottom:6%;
+    left:50%; transform:translateX(-50%);
+    font-family:inherit; font-size:13px; letter-spacing:1px; padding:8px 18px; border-radius:20px;
+    border:2px solid #7ec8e3; background:rgba(26,26,51,.82); color:#7ec8e3; cursor:pointer;
+  }
+  /* ---- pulsante "torna al menu" (solo in pausa): serve soprattutto per uscire dall'allenamento,
+     dove non esiste un game over naturale, ma funziona per uscire in qualsiasi momento ---- */
+  #quitBtn {
+    display:none; position:absolute; z-index:81; top:72%;
+    left:50%; transform:translate(-50%,-50%);
+    font-family:inherit; font-size:14px; letter-spacing:1px; padding:9px 20px; border-radius:20px;
+    border:2px solid #ff5a5a; background:rgba(26,26,51,.88); color:#ff5a5a; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<div id="splash">
+  <div class="paw">🐕🥏</div>
+  <div class="logo">Fio Fresbee</div>
+  <div class="bar"><i></i></div>
+</div>
+<h1>Fio Fresbee</h1>
+<div class="sub">IL CANE PIÙ VELOCE DELLA SPIAGGIA</div>
+<div id="wrap">
+  <canvas id="game" width="960" height="540"></canvas>
+  <button id="fsBtn" title="Schermo intero">⛶</button>
+  <button id="trBtn" title="Trofei">🏆</button>
+  <button id="setBtn" title="Impostazioni">⚙</button>
+  <button id="upgBtn" title="Potenzia Fio">🦴</button>
+  <button id="pauseBtn" title="Pausa">⏸</button>
+  <button id="shareBtn">📤 CONDIVIDI PUNTEGGIO</button>
+  <button id="quitBtn">✕ TORNA AL MENU</button>
+  <div class="pad" id="padL">
+    <div id="joyBase"><div id="joyKnob"></div></div>
+  </div>
+  <div class="pad" id="padR">
+    <button id="btnJ">▲</button>
+  </div>
+  <div id="nameBox">
+    <div class="t">NUOVO RECORD!</div>
+    <input id="nameInput" maxlength="10" placeholder="IL TUO NOME" autocomplete="off">
+    <button id="nameOk">OK</button>
+  </div>
+  <div class="panel" id="settingsBox">
+    <div class="t">⚙ IMPOSTAZIONI</div>
+    <div class="row"><label>🎵 Musica</label><input type="range" id="volMusic" min="0" max="100" value="70"></div>
+    <div class="row"><label>🔊 Effetti</label><input type="range" id="volSfx" min="0" max="100" value="80"></div>
+    <div class="row"><label>📳 Vibrazione</label><input type="checkbox" id="vibToggle" checked></div>
+    <div class="row"><label>🏋️ Allenamento (senza game over)</label><input type="checkbox" id="trainToggle"></div>
+    <div class="t2">🎯 DIFFICOLTÀ</div>
+    <div class="chipRow" id="diffBtnRow">
+      <button class="diffBtn" data-d="easy">FACILE</button>
+      <button class="diffBtn" data-d="normal">NORMALE</button>
+      <button class="diffBtn" data-d="hard">DIFFICILE</button>
+    </div>
+    <button class="ok" id="settingsOk">CHIUDI</button>
+  </div>
+  <div class="panel" id="upgradeBox">
+    <div class="t">🦴 POTENZIA IL TUO CANE</div>
+    <div class="t2" style="margin-top:0">🐕 SCEGLI LA RAZZA</div>
+    <div class="dogRow" id="dogRow"></div>
+    <div class="bones">Ossa disponibili: <b id="boneCount">0</b> 🦴</div>
+    <div id="statList"></div>
+    <button class="ok" id="upgradeOk">CHIUDI</button>
+  </div>
+  <div class="panel" id="tutBox">
+    <div class="t">COME SI GIOCA</div>
+    <p id="tutText"></p>
+    <button class="ok" id="tutOk">HO CAPITO, GIOCHIAMO!</button>
+  </div>
+</div>
+<div id="rotate">
+  <div class="ph">📱</div>
+  RUOTA IL TELEFONO<br>
+  <span>il gioco si gioca in orizzontale</span>
+</div>
+<div id="help">
+  <b>← →</b> muovi il cane · <b>SPAZIO / ↑</b> salto acrobatico · prendi il frisbee al volo!<br>
+  Prese consecutive = <b>COMBO</b> fino a x5 · frisbee <b>DORATO</b> = 500 punti · frisbee <b>🪃 BOOMERANG</b> torna indietro!<br>
+  <b>OSSO</b> = turbo + doppio salto · ogni <b>2000 punti</b> recuperi un MISS · <b>INVIO</b> inizia · <b>P</b> pausa · <b>M</b> musica<br>
+  <b>1 2 3</b> difficoltà · <b>S</b> condividi punteggio · <b>⚙</b> impostazioni · <b>⛶</b> schermo intero
+</div>
+
+<script>
+// ================= CONFIGURAZIONE CLASSIFICA ONLINE (SUPABASE) =================
+// Incolla qui i due valori del tuo progetto Supabase (vedi GUIDA.md).
+// Finché restano vuoti, la classifica funziona solo in locale sul dispositivo.
+const SUPA_URL = 'https://gynxolpcxgkcuygsamgc.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5bnhvbHBjeGdrY3V5Z3NhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwMzU3NTIsImV4cCI6MjEwMjYxMTc1Mn0.K_Ecdzd_aJR8CJAYT5vUbyU6A9vpMIQj1G7aAy5Wrcg';
+// ===============================================================================
+const ONLINE = SUPA_URL.startsWith('https') && SUPA_KEY.length > 20;
+const SUPA_HEADERS = {
+  'apikey': SUPA_KEY,
+  'Authorization': 'Bearer ' + SUPA_KEY,
+  'Content-Type': 'application/json'
+};
+
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const GROUND = H - 90;
+
+// ---------- STATE ----------
+let state = 'title'; // title, play, over
+let score = 0, best = +(localStorage.getItem('dd_best')||0);
+let catches = 0, round = 0, misses = 0, thrown = 0;
+let maxMiss = 3;                      // può crescere con le vite extra
+let nextLife = 2000;                  // ogni 2000 punti: recuperi un MISS
+let streak = 0;                       // prese consecutive → moltiplicatore combo
+let gull = null, gullTimer = 500;     // gabbiano dispettoso
+let crab = null, crabTimer = 700;     // granchio sulla sabbia
+let bone = null, boneTimer = 1000;    // osso turbo
+let turbo = 0;                        // frames di turbo rimasti
+let turboMax = 480;                   // durata piena dell'ultimo turbo raccolto (per la barra), cresce con lo stat Turbo
+const TURBO_TIME = 480;
+let lastJumpHeld = false, airJumps = 0;
+let newRecord = false, bestAtStart = 0;  // festa del record!
+let fwTimer = 0, overT = 0;
+let paused = false;
+let throwAnim = 0;   // qualche frame di animazione del braccio quando il lanciatore lancia
+
+// ---- effetti camera (scossa sul record e sui colpi) ----
+let camShake = 0, camShakeMag = 0;
+function triggerShake(mag, dur){ camShake = dur; camShakeMag = mag; }
+// ---- dissolvenza tra le schermate (menu / gioco / game over) ----
+let transitionAlpha = 1;
+
+// ---- scenografia: delfini e stelle cadenti ----
+let dolphins = [], dolphinTimer = 400;
+let shooters = [], shooterTimer = 300;
+
+// ---- scenografia extra: temporale vero (nuvole, pioggia, tuoni, fulmini) seguito da un arcobaleno ----
+// evento raro, solo di giorno; dura a lungo con un'entrata e un'uscita graduali, non un semplice on/off
+const STORM_FADE = 150;                          // frame di dissolvenza in entrata/uscita (~2.5s)
+const STORM_HOLD = 1500;                         // frame di temporale pieno (~25s)
+const STORM_TOTAL = STORM_FADE*2 + STORM_HOLD;   // durata totale del temporale (~30s)
+const RAINBOW_FADE = 90, RAINBOW_HOLD = 360, RAINBOW_TOTAL = RAINBOW_FADE*2 + RAINBOW_HOLD;
+function stormIntensity(t){
+  if (t < STORM_FADE) return t/STORM_FADE;
+  if (t > STORM_TOTAL-STORM_FADE) return Math.max(0, (STORM_TOTAL-t)/STORM_FADE);
+  return 1;
+}
+let weather = null;                 // null oppure {phase:'storm'|'rainbow', t}
+let weatherTimer = 1800 + Math.random()*1400;
+let stormClouds = [], raindrops = [];
+let lightning = 0;                  // frame di flash lampo attivo
+let thunderTimer = 0;               // countdown al prossimo tuono/fulmine
+
+// ---- trofei ----
+const ACH = [
+  { id:'first',  name:'PRIMA PRESA',       desc:'Prendi il tuo primo frisbee' },
+  { id:'combo5', name:'COMBO MASSIMA',     desc:'Raggiungi la combo x5' },
+  { id:'ten',    name:'10 DI FILA',        desc:'10 prese consecutive senza errori' },
+  { id:'gold3',  name:"CACCIATORE D'ORO",  desc:'3 frisbee dorati in una partita' },
+  { id:'acro10', name:'ACROBATA',          desc:'10 prese al volo in una partita' },
+  { id:'night',  name:'NOTTAMBULO',        desc:'Resisti fino alla notte fonda' },
+  { id:'bone3',  name:'TURBO CANE',        desc:'3 ossi presi in una partita' },
+  { id:'legend', name:'LEGGENDA',          desc:'10000 punti in una partita' }
+];
+let unlocked = [];
+try { unlocked = JSON.parse(localStorage.getItem('dd_troph')||'[]'); } catch(e){ unlocked=[]; }
+// banner in alto: mostra un messaggio alla volta, mettendo in coda quelli che arrivano mentre uno è già visibile
+// (es. salita di livello + sblocco di un nuovo cane nello stesso istante)
+let trophyMsg = '', trophyTimer = 0, trophyQueue = [];
+function showTrophyMsg(msg, dur){
+  if (trophyTimer > 0){ trophyQueue.push({ msg, dur }); return; }
+  trophyMsg = msg; trophyTimer = dur;
+}
+
+// ---- impostazioni (volume, vibrazione, skin, difficoltà) — persistite in locale ----
+let SET = { musicVol:70, sfxVol:80, vibration:true, training:false };
+try { SET = Object.assign(SET, JSON.parse(localStorage.getItem('dd_settings')||'{}')); } catch(e){}
+function saveSettings(){ localStorage.setItem('dd_settings', JSON.stringify(SET)); }
+
+// ---- livello giocatore: cresce con l'esperienza (punteggio) accumulata in tutte le partite ----
+const RANKS = [
+  { name:'Cucciolo da Spiaggia',   min:0 },
+  { name:'Corridore di Sabbia',    min:2000 },
+  { name:'Cacciatore di Frisbee',  min:6000 },
+  { name:'Surfista delle Onde',    min:15000 },
+  { name:'Campione della Baia',    min:30000 },
+  { name:'Eroe della Spiaggia',    min:60000 },
+  { name:'Leggenda di Fio',        min:120000 }
+];
+let totalXP = +(localStorage.getItem('dd_xp')||0);
+function rankIndex(xp){
+  let idx = 0;
+  for (let i=0;i<RANKS.length;i++) if (xp >= RANKS[i].min) idx = i;
+  return idx;
+}
+
+// ---- razze di cane sbloccabili salendo di livello: ognuna è un piccolo compromesso (mai solo un
+// vantaggio, come in Mario Kart), tranne l'ultima che ha un tratto unico invece di semplici numeri
+// (alla Brawl Stars) — ispirato ai roster dei giochi più famosi, vedi discussione con l'utente ----
+const DOGS = [
+  { id:'fio',        name:'Fio',        icon:'🐕', unlockRank:0,
+    colors:{ body:'#b5763a', dark:'#8a5a2a', collar:'#d1342c' },
+    speedMul:1, jumpMul:1, luckBonus:0, vitalityBonus:0, turboMul:1, trait:null,
+    desc:'Il cane di sempre: equilibrato in tutto.' },
+  { id:'saetta',     name:'Saetta',     icon:'🐕', unlockRank:1,
+    colors:{ body:'#dcdcdc', dark:'#a9a9a9', collar:'#3fa7ff' },
+    speedMul:1.12, jumpMul:1, luckBonus:0, vitalityBonus:-1, turboMul:1, trait:null,
+    desc:'Whippet scattante: +12% velocità, ma -1 vita di partenza.' },
+  { id:'molla',      name:'Molla',      icon:'🐕', unlockRank:2,
+    colors:{ body:'#e0a94a', dark:'#b5822e', collar:'#7eff9e' },
+    speedMul:0.93, jumpMul:1.18, luckBonus:0, vitalityBonus:0, turboMul:1, trait:null,
+    desc:'Corgi con la molla: +18% salto, ma -7% velocità.' },
+  { id:'fortunella', name:'Fortunella', icon:'🐕', unlockRank:3,
+    colors:{ body:'#f2d98a', dark:'#c9ac5a', collar:'#ffd23f' },
+    speedMul:1, jumpMul:1, luckBonus:0.03, vitalityBonus:0, turboMul:0.8, trait:null,
+    desc:'Golden fortunata: +3% frisbee dorati, ma -20% durata turbo.' },
+  { id:'roccia',     name:'Roccia',     icon:'🐕', unlockRank:4,
+    colors:{ body:'#8a8a8a', dark:'#5c5c5c', collar:'#ff5a5a' },
+    speedMul:0.9, jumpMul:1, luckBonus:0, vitalityBonus:1, turboMul:1, trait:null,
+    desc:'Bulldog corazzato: +1 vita di partenza, ma -10% velocità.' },
+  { id:'sprint',     name:'Sprint',     icon:'🐕', unlockRank:5,
+    colors:{ body:'#2b2b2b', dark:'#151515', collar:'#ffffff' },
+    speedMul:1, jumpMul:1, luckBonus:0, vitalityBonus:0, turboMul:1, trait:'turboChain',
+    desc:'Border Collie instancabile: ogni presa consecutiva ricarica un po\' di turbo.' }
+];
+let selectedDogId = localStorage.getItem('dd_dog') || 'fio';
+if (!DOGS.some(d => d.id === selectedDogId)) selectedDogId = 'fio';
+function selectedDog(){ return DOGS.find(d => d.id === selectedDogId) || DOGS[0]; }
+function isDogUnlocked(d){ return rankIndex(totalXP) >= d.unlockRank; }
+function selectDog(id){
+  const d = DOGS.find(x => x.id === id);
+  if (!d || !isDogUnlocked(d)) return false;
+  selectedDogId = id;
+  localStorage.setItem('dd_dog', id);
+  return true;
+}
+
+// ---- livelli del cane: parametri potenziabili con le ossa raccolte in partita (stile "meta-progressione"
+// permanente da roguelike: Rogue Legacy/Dead Cells/Hades — una valuta guadagnata giocando, spesa fra una
+// partita e l'altra su bonus permanenti e modesti, che non sostituiscono l'abilità ma la aiutano un po') ----
+const DOG_STATS = [
+  { id:'speed',    name:'Velocità',   icon:'💨', max:5, effect:'+4% velocità di corsa per livello' },
+  { id:'jump',     name:'Salto',      icon:'🦘', max:5, effect:'+3% altezza del salto; al massimo, doppio salto sempre disponibile' },
+  { id:'luck',     name:'Fortuna',    icon:'🍀', max:5, effect:'+1% probabilità di frisbee dorato per livello' },
+  { id:'vitality', name:'Resistenza', icon:'❤️', max:4, effect:'+1 vita di partenza ogni 2 livelli' },
+  { id:'turbo',    name:'Turbo',      icon:'🔥', max:5, effect:'+8% durata del turbo per livello' }
+];
+function dogStatCost(lvl){ return 3 + lvl*3; }   // ossa richieste per salire dal livello lvl al successivo
+let dogLevels = { speed:0, jump:0, luck:0, vitality:0, turbo:0 };
+try { dogLevels = Object.assign(dogLevels, JSON.parse(localStorage.getItem('dd_doglvl')||'{}')); } catch(e){}
+let dogBones = +(localStorage.getItem('dd_bones')||0);
+let roundBonesEarned = 0;
+function saveDogProgress(){
+  localStorage.setItem('dd_doglvl', JSON.stringify(dogLevels));
+  localStorage.setItem('dd_bones', dogBones);
+}
+function dogStatMax(id){ return DOG_STATS.find(s => s.id===id).max; }
+function dogUpgradeCost(id){ return dogStatCost(dogLevels[id]); }
+function dogCanUpgrade(id){ return dogLevels[id] < dogStatMax(id) && dogBones >= dogUpgradeCost(id); }
+function dogUpgrade(id){
+  if (!dogCanUpgrade(id)) return false;
+  dogBones -= dogUpgradeCost(id);
+  dogLevels[id]++;
+  saveDogProgress();
+  return true;
+}
+// moltiplicatori/bonus derivati dai livelli (potenziamenti universali) più il bonus/malus di base
+// della razza scelta, usati nella fisica di gioco
+function dogSpeedMul(){ return selectedDog().speedMul + dogLevels.speed*0.04; }
+function dogJumpMul(){ return selectedDog().jumpMul + dogLevels.jump*0.03; }
+function dogLuckBonus(){ return selectedDog().luckBonus + dogLevels.luck*0.01; }
+function dogVitalityBonus(){ return selectedDog().vitalityBonus + Math.floor(dogLevels.vitality/2); }
+function dogTurboMul(){ return selectedDog().turboMul + dogLevels.turbo*0.08; }
+
+// ---- livelli di difficoltà ----
+const DIFF = {
+  easy:   { spawnMul:1.35, speedMul:0.85, hazardMul:1.45, startLives:4, label:'FACILE' },
+  normal: { spawnMul:1,    speedMul:1,    hazardMul:1,    startLives:3, label:'NORMALE' },
+  hard:   { spawnMul:0.72, speedMul:1.18, hazardMul:0.68, startLives:3, label:'DIFFICILE' }
+};
+let difficulty = localStorage.getItem('dd_diff') || 'normal';
+if (!DIFF[difficulty]) difficulty = 'normal';
+let gameGold = 0, gameAir = 0, gameBones = 0;
+function award(id){
+  if (unlocked.includes(id)) return;
+  unlocked.push(id);
+  localStorage.setItem('dd_troph', JSON.stringify(unlocked));
+  const a = ACH.find(a => a.id === id);
+  showTrophyMsg('🏆 ' + a.name + '!', 150);
+  SFX.trophy();
+}
+const FW_COLORS = ['#ffd23f','#ff5a5a','#7ec8e3','#7eff9e','#ff9de3'];
+function burst(x, y, color){
+  for (let i=0;i<26;i++){
+    const a = Math.random()*Math.PI*2, sp = 1.5 + Math.random()*3.2;
+    particles.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-1,
+      life: 30+Math.random()*25, color });
+  }
+}
+// stelle per la notte
+const stars = [];
+for (let i=0;i<45;i++) stars.push({x:Math.random()*W, y:Math.random()*(H-220), tw:Math.random()*6});
+let message = '', msgTimer = 0;
+let particles = [];
+let clouds = [];
+for (let i=0;i<4;i++) clouds.push({x:Math.random()*W, y:30+Math.random()*90, s:.5+Math.random()});
+
+// barchette a vela
+let boats = [], boatTimer = 0;
+function spawnBoat(){
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  boats.push({
+    x: dir > 0 ? -70 : W+70,
+    y: GROUND - 34 + Math.random()*24,
+    vx: dir * (0.4 + Math.random()*0.7),
+    s: 0.6 + Math.random()*0.6,
+    hue: Math.floor(Math.random()*360),
+    bob: Math.random()*Math.PI*2
+  });
+}
+
+// ---------- CLASSIFICA (online via Supabase, altrimenti locale) ----------
+let board = [];
+let boardLoading = false;
+let nameOpen = false;
+try { board = JSON.parse(localStorage.getItem('dd_board')||'[]'); } catch(e){ board=[]; }
+function saveLocalBoard(){ localStorage.setItem('dd_board', JSON.stringify(board.slice(0,5))); }
+
+async function fetchBoard(){
+  if (!ONLINE) return;
+  boardLoading = true;
+  try {
+    const r = await fetch(SUPA_URL + '/rest/v1/scores?select=name,score&order=score.desc&limit=5', { headers: SUPA_HEADERS });
+    if (r.ok) board = await r.json();
+  } catch(e){}
+  boardLoading = false;
+}
+
+async function submitScore(name, s){
+  if (!ONLINE){
+    board.push({name, score:s});
+    board.sort((a,b)=>b.score-a.score);
+    board = board.slice(0,5);
+    saveLocalBoard();
+    return;
+  }
+  try {
+    await fetch(SUPA_URL + '/rest/v1/scores', {
+      method:'POST', headers: SUPA_HEADERS,
+      body: JSON.stringify({ name, score: s })
+    });
+  } catch(e){}
+  await fetchBoard();
+}
+
+function qualifies(s){ return s>0 && (board.length<5 || s > board[board.length-1].score); }
+
+const nameBox = document.getElementById('nameBox');
+const nameInput = document.getElementById('nameInput');
+function askName(){
+  nameOpen = true;
+  nameInput.value = localStorage.getItem('dd_name') || '';
+  nameBox.style.display = 'block';
+  setTimeout(()=>nameInput.focus(), 50);
+}
+function confirmName(){
+  let name = (nameInput.value||'PLAYER').toUpperCase().replace(/[^A-Z0-9 ]/g,'').slice(0,10).trim() || 'PLAYER';
+  localStorage.setItem('dd_name', name);
+  nameBox.style.display = 'none';
+  nameOpen = false;
+  submitScore(name, score);
+}
+document.getElementById('nameOk').addEventListener('click', confirmName);
+nameInput.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') confirmName();
+});
+
+// ---------- SCHERMO INTERO ----------
+const wrap = document.getElementById('wrap');
+const isTouch = matchMedia('(pointer:coarse)').matches;
+function lockLandscape(){
+  try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
+}
+// fullscreen automatico su mobile (parte dal primo tocco, come richiedono i browser)
+function enterFS(){
+  if (isFS()) return;
+  if (wrap.requestFullscreen){
+    const p = wrap.requestFullscreen();
+    if (p && p.then) p.then(lockLandscape).catch(simFS); else lockLandscape();
+  }
+  else if (wrap.webkitRequestFullscreen){ wrap.webkitRequestFullscreen(); lockLandscape(); }
+  else simFS();   // iPhone: fullscreen simulato
+  syncFSClass();
+}
+function isFS(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement) || document.body.classList.contains('fs-sim');
+}
+function toggleFS(){
+  if (!isFS()){
+    if (wrap.requestFullscreen) wrap.requestFullscreen().catch(()=>simFS());
+    else if (wrap.webkitRequestFullscreen) wrap.webkitRequestFullscreen();
+    else simFS(); // iPhone: niente API fullscreen → modalità simulata
+  } else {
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+    document.body.classList.remove('fs','fs-sim');
+  }
+}
+function simFS(){
+  document.body.classList.add('fs','fs-sim');
+  window.scrollTo(0,1);
+}
+function syncFSClass(){
+  const real = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (real) document.body.classList.add('fs');
+  else if (!document.body.classList.contains('fs-sim')) document.body.classList.remove('fs');
+  document.getElementById('fsBtn').textContent = isFS() ? '✕' : '⛶';
+}
+document.addEventListener('fullscreenchange', syncFSClass);
+document.addEventListener('webkitfullscreenchange', syncFSClass);
+document.getElementById('fsBtn').addEventListener('click', e => { e.stopPropagation(); toggleFS(); syncFSClass(); });
+
+// ---- app installata sulla schermata Home: già a schermo intero, nessun avviso del browser ----
+// (l'avviso "trascina dall'alto per uscire" appare solo quando è la pagina a chiedere il fullscreen
+// col tasto/tocco; l'app installata invece è già a schermo intero fin dall'avvio, senza quell'avviso)
+function isStandalone(){
+  return matchMedia('(display-mode: standalone)').matches ||
+         matchMedia('(display-mode: fullscreen)').matches ||
+         navigator.standalone === true;   // iOS: aperta da "Aggiungi a Home"
+}
+if (isStandalone()){
+  simFS();                                    // applica subito il layout a schermo intero
+  document.getElementById('fsBtn').style.display = 'none';   // non serve nessun pulsante
+  lockLandscape();
+}
+
+// classifica (top 5)
+// thrower (the player character) on the left
+const thrower = { x: 175, y: GROUND };   // un po' più staccato dal bordo, così i comandi touch non lo coprono
+
+// dog
+const dog = {
+  x: W*0.55, y: GROUND, vx: 0, vy: 0,
+  w: 54, h: 34, onGround: true, dir: 1, jumpSpin: 0, anim: 0, stun: 0
+};
+
+// frisbee (può essercene più di uno in volo!)
+let discs = [];
+let pendingThrows = 0;
+
+// ---------- AUDIO (chiptune via Web Audio) ----------
+let AC = null, musicOn = true, musicTimer = null;
+function audio(){
+  if (!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function beep(freq, dur, type='square', vol=0.15, slide=0, delay=0, channel='sfx'){
+  const chVol = (channel==='music' ? SET.musicVol : SET.sfxVol) / 100;
+  if (chVol <= 0) return;
+  vol *= chVol;
+  try {
+    const ac = audio();
+    const t = ac.currentTime + delay;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq+slide), t+dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+    o.connect(g).connect(ac.destination);
+    o.start(t); o.stop(t+dur+0.02);
+  } catch(e){}
+}
+function noiseBurst(dur=0.15, vol=0.12, delay=0, channel='sfx'){
+  const chVol = (channel==='music' ? SET.musicVol : SET.sfxVol) / 100;
+  if (chVol <= 0) return;
+  vol *= chVol;
+  try {
+    const ac = audio();
+    const t = ac.currentTime + delay;
+    const buf = ac.createBuffer(1, ac.sampleRate*dur, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * (1-i/d.length);
+    const s = ac.createBufferSource(); s.buffer = buf;
+    const g = ac.createGain(); g.gain.value = vol;
+    const f = ac.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1200;
+    s.connect(f).connect(g).connect(ac.destination);
+    s.start(t);
+  } catch(e){}
+}
+// rumore delle onde del mare, in loop leggero e continuo (ambiente, non legato al gameplay)
+function waveNoise(){
+  if (SET.sfxVol <= 0) return;
+  try {
+    const ac = audio();
+    const dur = 2.4;
+    const buf = ac.createBuffer(1, ac.sampleRate*dur, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++){
+      const env = Math.sin(Math.PI * i/d.length);        // dissolvenza in entrata/uscita
+      d[i] = (Math.random()*2-1) * env;
+    }
+    const s = ac.createBufferSource(); s.buffer = buf;
+    const f = ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=450;
+    const g = ac.createGain(); g.gain.value = 0.045 * (SET.sfxVol/100);
+    s.connect(f).connect(g).connect(ac.destination);
+    s.start();
+  } catch(e){}
+}
+let waveTimer = null;
+function startAmbient(){ if (waveTimer) return; waveNoise(); waveTimer = setInterval(waveNoise, 2500); }
+function stopAmbient(){ if (waveTimer){ clearInterval(waveTimer); waveTimer=null; } }
+const SFX = {
+  throw_(){ noiseBurst(0.25, 0.10); beep(300, 0.25, 'sawtooth', 0.06, 500); },
+  jump(){ beep(250, 0.18, 'square', 0.10, 350); },
+  catch_(){ beep(660, 0.10, 'square', 0.14); beep(880, 0.16, 'square', 0.14, 0, 0.09); },
+  acro(){ [523,659,784,1046].forEach((f,i)=>beep(f, 0.12, 'square', 0.14, 0, i*0.07)); },
+  bounce(){ beep(180, 0.08, 'triangle', 0.10, -60); },
+  miss(){ beep(300, 0.5, 'sawtooth', 0.12, -220); },
+  round(){ beep(440,0.1,'square',0.12); beep(660,0.15,'square',0.12,0,0.1); },
+  goldSpawn(){ [880,1108,1318].forEach((f,i)=>beep(f, 0.10, 'triangle', 0.12, 0, i*0.06)); },
+  boomSpawn(){ [420,520,620,520].forEach((f,i)=>beep(f, 0.08, 'triangle', 0.09, 0, i*0.05)); },
+  boomTurn(){ beep(240, 0.28, 'sawtooth', 0.09, 180); },
+  squawk(){ beep(950, 0.12, 'sawtooth', 0.10, -350); beep(800, 0.14, 'sawtooth', 0.10, -300, 0.12); },
+  ouch(){ beep(140, 0.35, 'sawtooth', 0.13, -60); noiseBurst(0.12, 0.08); },
+  turbo(){ beep(300, 0.3, 'sawtooth', 0.10, 700); [660,880].forEach((f,i)=>beep(f,0.1,'square',0.12,0,0.3+i*0.08)); },
+  life(){ [523,659,784,1046,1318].forEach((f,i)=>beep(f, 0.11, 'triangle', 0.13, 0, i*0.06)); },
+  record(){ [523,523,523,659,784,784,1046].forEach((f,i)=>beep(f, 0.13, 'square', 0.14, 0, i*0.09)); beep(1568, 0.5, 'triangle', 0.10, 0, 0.66); },
+  bark(){ beep(480, 0.07, 'sawtooth', 0.14, -180); beep(430, 0.09, 'sawtooth', 0.13, -200, 0.09); },
+  whine(){ beep(820, 0.5, 'triangle', 0.09, -450); },
+  trophy(){ [784,988,1175,1568].forEach((f,i)=>beep(f, 0.12, 'triangle', 0.13, 0, i*0.09)); },
+  pop(){ noiseBurst(0.2, 0.06); beep(700+Math.random()*500, 0.08, 'triangle', 0.05, -200); },
+  golden(){ [523,659,784,1046,1318,1568].forEach((f,i)=>beep(f, 0.14, 'square', 0.14, 0, i*0.07)); beep(2093, 0.4, 'triangle', 0.10, 0, 0.45); },
+  over(){ [392,330,262,196].forEach((f,i)=>beep(f, 0.25, 'square', 0.13, 0, i*0.18)); },
+  thunder(){ noiseBurst(0.7, 0.15); beep(75, 0.6, 'sawtooth', 0.10, -35, 0.06); }
+};
+// musichetta loop (marimba-ish da spiaggia)
+const MELODY = [523,0,659,784, 659,0,523,392, 440,0,523,659, 587,659,784,0];
+const BASS   = [131,0,131,0, 165,0,165,0, 110,0,110,0, 147,0,196,0];
+let mStep = 0;
+function musicTick(){
+  if (!musicOn || state!=='play') return;
+  const m = MELODY[mStep%16], b = BASS[mStep%16];
+  if (m) beep(m, 0.16, 'triangle', 0.05, 0, 0, 'music');
+  if (b) beep(b, 0.20, 'sine', 0.06, 0, 0, 'music');
+  mStep++;
+}
+function startMusic(){
+  stopMusic();
+  musicTimer = setInterval(musicTick, 190);
+}
+function stopMusic(){ if (musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+
+let settingsOpen = false, tutOpen = false, upgradeOpen = false;
+function inputBlocked(){ return nameOpen || settingsOpen || tutOpen || upgradeOpen; }
+
+const keys = {};
+addEventListener('keydown', e => {
+  if (inputBlocked()) return;
+  keys[e.code] = true;
+  if (e.code === 'Enter') {
+    if (state === 'trophy') { state = 'title'; transitionAlpha = 1; }
+    else if (state === 'title' || state === 'over') startGame();
+  }
+  if (e.code === 'KeyP' && state === 'play') paused = !paused;
+  if (e.code === 'Escape' && paused && state === 'play') quitToMenu();
+  if (e.code === 'KeyT'){
+    if (state === 'trophy') { state = 'title'; transitionAlpha = 1; }
+    else if (state === 'title' || state === 'over') { state = 'trophy'; transitionAlpha = 1; }
+  }
+  if (e.code === 'KeyM') musicOn = !musicOn;
+  if (e.code === 'KeyF') { toggleFS(); syncFSClass(); }
+  if (e.code === 'KeyS' && state === 'over') shareScore();
+  if (['Digit1','Numpad1'].includes(e.code) && state === 'title') setDifficulty('easy');
+  if (['Digit2','Numpad2'].includes(e.code) && state === 'title') setDifficulty('normal');
+  if (['Digit3','Numpad3'].includes(e.code) && state === 'title') setDifficulty('hard');
+  if (['Space','ArrowUp','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+// touch controls
+function buzz(){ if (!SET.vibration) return; try { if (navigator.vibrate) navigator.vibrate(15); } catch(e){} }   // solo Android
+const bind = (id, code) => {
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); keys[code]=true;
+    el.classList.add('pressed'); buzz();
+    enterFS(); startAmbient();
+    if (state!=='play' && !inputBlocked()) startGame(); }, {passive:false});
+  el.addEventListener('touchend', e => { e.preventDefault(); keys[code]=false; el.classList.remove('pressed'); }, {passive:false});
+  el.addEventListener('touchcancel', e => { keys[code]=false; el.classList.remove('pressed'); });
+};
+bind('btnJ','Space');
+
+// joystick virtuale "flottante": tocchi in un punto qualsiasi della zona a sinistra e il
+// joystick compare lì (non è più fisso in un punto preciso). Direzione e distanza dal punto
+// di tocco iniziale determinano direzione E velocità (come uno stick analogico).
+let joyDir = 0; // -1..1
+(function(){
+  const zone = document.getElementById('padL');
+  const base = document.getElementById('joyBase');
+  const knob = document.getElementById('joyKnob');
+  const BASE_SIZE = 84; // deve combaciare con la larghezza/altezza CSS di #joyBase
+  let touchId = null, cx = 0, radius = BASE_SIZE/2;
+  function spawnAt(clientX, clientY){
+    const zr = zone.getBoundingClientRect();
+    const half = BASE_SIZE/2;
+    // il joystick compare centrato sul tocco, ma resta sempre interamente dentro la zona
+    const x = Math.max(zr.left+half, Math.min(zr.right-half, clientX));
+    const y = Math.max(zr.top+half, Math.min(zr.bottom-half, clientY));
+    cx = x; radius = half;
+    base.style.left = (x - zr.left - half) + 'px';
+    base.style.top = (y - zr.top - half) + 'px';
+    knob.style.transform = 'translate(0,0)';
+  }
+  function applyTouch(t){
+    let dx = t.clientX - cx;
+    dx = Math.max(-radius, Math.min(radius, dx));
+    joyDir = radius > 0 ? dx / radius : 0;
+    knob.style.transform = `translate(${dx}px, 0)`;
+  }
+  function findTouch(e){
+    for (const t of e.changedTouches) if (t.identifier === touchId) return t;
+    return null;
+  }
+  zone.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    touchId = t.identifier;
+    spawnAt(t.clientX, t.clientY);
+    knob.classList.add('dragging');
+    base.classList.add('active');
+    buzz(); enterFS(); startAmbient();
+    if (state!=='play' && !inputBlocked()) startGame();
+    applyTouch(t);
+  }, {passive:false});
+  zone.addEventListener('touchmove', e => {
+    if (touchId === null) return;
+    e.preventDefault();
+    const t = findTouch(e);
+    if (t) applyTouch(t);
+  }, {passive:false});
+  const release = e => {
+    if (touchId === null) return;
+    if (!findTouch(e)) return;
+    touchId = null; joyDir = 0;
+    knob.classList.remove('dragging');
+    knob.style.transform = 'translate(0,0)';
+    base.classList.remove('active');
+  };
+  zone.addEventListener('touchend', release, {passive:false});
+  zone.addEventListener('touchcancel', release, {passive:false});
+})();
+
+cv.addEventListener('touchstart', e => {
+  if (inputBlocked()) return;
+  enterFS(); startAmbient();   // su mobile il gioco va a schermo intero da solo
+  if (state === 'trophy') { state = 'title'; return; }
+  if (state !== 'play') startGame();
+}, {passive:true});
+cv.addEventListener('click', () => { audio(); startAmbient(); });
+
+// telefono in verticale: pausa automatica, riprende quando lo ruoti
+let autoPaused = false;
+function checkOrient(){
+  const portrait = matchMedia('(orientation:portrait)').matches;
+  if (isTouch && portrait && state === 'play' && !paused){
+    paused = true; autoPaused = true;
+  } else if (!portrait && autoPaused){
+    paused = false; autoPaused = false;
+  }
+}
+addEventListener('resize', checkOrient);
+try { matchMedia('(orientation:portrait)').addEventListener('change', checkOrient); } catch(e){}
+document.getElementById('trBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  if (state === 'trophy') state = 'title';
+  else if (state === 'title' || state === 'over') state = 'trophy';
+});
+// ---------- IMPOSTAZIONI: pannello (volume, vibrazione, difficoltà) ----------
+const settingsBox = document.getElementById('settingsBox');
+const volMusic = document.getElementById('volMusic');
+const volSfx = document.getElementById('volSfx');
+const vibToggle = document.getElementById('vibToggle');
+const trainToggle = document.getElementById('trainToggle');
+const diffBtnRow = document.getElementById('diffBtnRow');
+
+function syncDiffButtons(){
+  diffBtnRow.querySelectorAll('.diffBtn').forEach(b => b.classList.toggle('sel', b.dataset.d === difficulty));
+}
+function setDifficulty(d){
+  if (!DIFF[d]) return;
+  difficulty = d;
+  localStorage.setItem('dd_diff', difficulty);
+  syncDiffButtons();
+  beep(500,0.06,'square',0.12);
+}
+diffBtnRow.querySelectorAll('.diffBtn').forEach(b => b.addEventListener('click', () => setDifficulty(b.dataset.d)));
+
+function openSettings(){
+  volMusic.value = SET.musicVol; volSfx.value = SET.sfxVol; vibToggle.checked = SET.vibration;
+  trainToggle.checked = SET.training;
+  syncDiffButtons();
+  settingsBox.style.display = 'block';
+  settingsOpen = true;
+}
+function closeSettings(){ settingsBox.style.display = 'none'; settingsOpen = false; }
+document.getElementById('setBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  audio(); startAmbient();
+  settingsOpen ? closeSettings() : openSettings();
+});
+document.getElementById('settingsOk').addEventListener('click', closeSettings);
+volMusic.addEventListener('input', () => { SET.musicVol = +volMusic.value; saveSettings(); });
+volSfx.addEventListener('input', () => { SET.sfxVol = +volSfx.value; saveSettings(); });
+volSfx.addEventListener('change', () => beep(660,0.08,'square',0.15));
+vibToggle.addEventListener('change', () => { SET.vibration = vibToggle.checked; saveSettings(); if (SET.vibration) buzz(); });
+trainToggle.addEventListener('change', () => { SET.training = trainToggle.checked; saveSettings(); beep(500,0.06,'square',0.12); });
+
+// ---------- POTENZIA FIO: scelta della razza (sbloccate salendo di livello) + livelli del cane
+// (valuta = ossa raccolte in partita, valgono per la razza attiva) ----------
+const upgradeBox = document.getElementById('upgradeBox');
+const boneCountEl = document.getElementById('boneCount');
+const statListEl = document.getElementById('statList');
+const dogRowEl = document.getElementById('dogRow');
+function renderDogRow(){
+  dogRowEl.innerHTML = '';
+  const rIdx = rankIndex(totalXP);
+  DOGS.forEach(d => {
+    const unlockedDog = isDogUnlocked(d);
+    const sel = d.id === selectedDogId;
+    const card = document.createElement('div');
+    card.className = 'dogCard' + (sel ? ' selected' : '') + (unlockedDog ? '' : ' locked');
+    card.innerHTML =
+      '<div class="dogIcon" style="background:' + (unlockedDog ? d.colors.body : '#333') + '">' +
+        (unlockedDog ? '🐕' : '🔒') +
+      '</div>' +
+      '<div class="dogName">' + d.name + '</div>' +
+      '<div class="dogDesc">' + (unlockedDog ? d.desc : ('Livello: ' + RANKS[d.unlockRank].name)) + '</div>';
+    if (unlockedDog && !sel){
+      card.addEventListener('click', () => {
+        selectDog(d.id);
+        beep(700,0.08,'square',0.13);
+        renderDogRow();
+      });
+    }
+    dogRowEl.appendChild(card);
+  });
+}
+function renderUpgradePanel(){
+  boneCountEl.textContent = dogBones;
+  statListEl.innerHTML = '';
+  DOG_STATS.forEach(s => {
+    const lvl = dogLevels[s.id];
+    const maxed = lvl >= s.max;
+    const cost = dogUpgradeCost(s.id);
+    const afford = dogBones >= cost;
+    const row = document.createElement('div');
+    row.className = 'statRow';
+    row.innerHTML =
+      '<div class="statInfo">' +
+        '<span class="statIcon">' + s.icon + '</span>' +
+        '<div>' +
+          '<div class="statName">' + s.name + ' <span class="statLvl">Lv ' + lvl + '/' + s.max + '</span></div>' +
+          '<div class="statDesc">' + s.effect + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<button class="statBuy" data-id="' + s.id + '" ' + (maxed || !afford ? 'disabled' : '') + '>' +
+        (maxed ? 'MASSIMO' : ('POTENZIA<br>' + cost + '🦴')) +
+      '</button>';
+    statListEl.appendChild(row);
+  });
+  statListEl.querySelectorAll('.statBuy').forEach(b => {
+    b.addEventListener('click', () => {
+      if (dogUpgrade(b.dataset.id)){
+        beep(880,0.1,'square',0.15); beep(1108,0.12,'square',0.13,0,0.08);
+        renderUpgradePanel();
+      }
+    });
+  });
+}
+function openUpgrade(){ renderDogRow(); renderUpgradePanel(); upgradeBox.style.display = 'block'; upgradeOpen = true; }
+function closeUpgrade(){ upgradeBox.style.display = 'none'; upgradeOpen = false; }
+document.getElementById('upgBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  audio(); startAmbient();
+  upgradeOpen ? closeUpgrade() : openUpgrade();
+});
+document.getElementById('upgradeOk').addEventListener('click', closeUpgrade);
+
+// ---------- TUTORIAL AL PRIMO AVVIO ----------
+const tutBox = document.getElementById('tutBox');
+const tutText = document.getElementById('tutText');
+let pendingAfterTutorial = null;
+function maybeShowTutorial(cb){
+  if (localStorage.getItem('dd_tut_seen')){ cb && cb(); return; }
+  tutText.innerHTML = isTouch
+    ? 'Tocca e trascina in un punto qualsiasi <b>a sinistra</b> per muovere Fio: il joystick compare lì dove tocchi, più lo spingi lontano dal centro più corre veloce. Tocca <b>▲</b> a destra per saltare.<br>Prendi i frisbee al volo! Quello <b>dorato</b> vale di più, quello <b>viola</b> torna indietro se non lo prendi.'
+    : '<b>← →</b> muovi Fio · <b>SPAZIO / ↑</b> salto acrobatico (doppio salto con l\'osso turbo!).<br>Prendi i frisbee al volo! Quello <b>dorato</b> vale di più, quello <b>viola</b> torna indietro se non lo prendi. <b>P</b> pausa.';
+  tutOpen = true;
+  tutBox.style.display = 'block';
+  pendingAfterTutorial = cb;
+}
+document.getElementById('tutOk').addEventListener('click', () => {
+  localStorage.setItem('dd_tut_seen','1');
+  tutBox.style.display = 'none';
+  tutOpen = false;
+  const cb = pendingAfterTutorial; pendingAfterTutorial = null;
+  if (cb) cb();
+});
+
+// ---------- TORNA AL MENU (solo in pausa): serve per uscire dall'allenamento, che non ha game over ----------
+function quitToMenu(){
+  paused = false;
+  state = 'title';
+  transitionAlpha = 1;
+  stopMusic();
+}
+const quitBtn = document.getElementById('quitBtn');
+quitBtn.addEventListener('click', e => { e.stopPropagation(); quitToMenu(); });
+
+// ---------- PULSANTE PAUSA TOUCH (da tastiera c'è già il tasto P) ----------
+const pauseBtn = document.getElementById('pauseBtn');
+pauseBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (state === 'play') paused = !paused;
+});
+
+// ---------- CONDIVIDI PUNTEGGIO ----------
+const shareBtn = document.getElementById('shareBtn');
+shareBtn.addEventListener('click', e => { e.stopPropagation(); shareScore(); });
+function shareScore(){
+  const c = document.createElement('canvas');
+  c.width = 800; c.height = 450;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0,0,0,450);
+  grad.addColorStop(0,'#1a2a55'); grad.addColorStop(1,'#0d0d1a');
+  g.fillStyle = grad; g.fillRect(0,0,800,450);
+  g.textAlign = 'center';
+  g.fillStyle = '#ffd23f'; g.font = 'bold 40px "Courier New"';
+  g.fillText('🐕 FIO FRESBEE 🥏', 400, 88);
+  g.fillStyle = '#fff'; g.font = 'bold 70px "Courier New"';
+  g.fillText('SCORE ' + score, 400, 220);
+  g.fillStyle = '#7ec8e3'; g.font = '22px "Courier New"';
+  g.fillText('Miglior punteggio: ' + best + '  ·  ' + catches + ' frisbee presi al volo', 400, 268);
+  if (newRecord){
+    g.fillStyle = '#ffd23f'; g.font = 'bold 24px "Courier New"';
+    g.fillText('★ NUOVO RECORD! ★', 400, 320);
+  }
+  g.fillStyle = '#aaa'; g.font = '15px "Courier New"';
+  g.fillText('Gioca anche tu — stefanobozzo82.github.io/fiofresbee', 400, 410);
+  c.toBlob(blob => {
+    if (!blob) return;
+    const file = new File([blob], 'fiofresbee-score.png', { type:'image/png' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:'Fio Fresbee', text:'Il mio punteggio: ' + score }).catch(()=>{});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'fiofresbee-score.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    }
+  });
+}
+
+// mostra/nasconde gli elementi DOM in base allo stato di gioco corrente (chiamata ogni frame, economica)
+let lastUIState = null, lastPausedUI = null;
+function syncUI(){
+  if (state !== lastUIState){
+    lastUIState = state;
+    shareBtn.style.display = (state === 'over') ? 'block' : 'none';
+    if (isTouch) pauseBtn.style.display = (state === 'play') ? 'block' : 'none';
+  }
+  const showQuit = paused && state === 'play';
+  if (showQuit !== lastPausedUI){
+    lastPausedUI = showQuit;
+    quitBtn.style.display = showQuit ? 'block' : 'none';
+    pauseBtn.textContent = paused ? '▶' : '⏸';
+    pauseBtn.title = paused ? 'Riprendi' : 'Pausa';
+  }
+}
+
+// ---------- SPLASH SCREEN INIZIALE ----------
+const splashEl = document.getElementById('splash');
+function dismissSplash(){
+  if (!splashEl.parentNode) return;
+  splashEl.classList.add('hide');
+  audio(); startAmbient();
+  setTimeout(() => splashEl.remove(), 550);
+}
+splashEl.addEventListener('click', dismissSplash);
+setTimeout(dismissSplash, 1500);
+
+function startGame(){
+  // primo avvio in assoluto: prima spiega i comandi, poi gioca davvero
+  maybeShowTutorial(startGameReal);
+}
+function startGameReal(){
+  const d = DIFF[difficulty];
+  state='play'; score=0; catches=0; round=0; misses=0; thrown=0; streak=0;
+  maxMiss=Math.max(1, d.startLives+dogVitalityBonus()); nextLife=2000;
+  dog.x=W*0.55; dog.y=GROUND; dog.vx=0; dog.vy=0; dog.stun=0; dog.grace=0;
+  gull=null; gullTimer=500*d.hazardMul; crab=null; crabTimer=700*d.hazardMul;
+  bone=null; boneTimer=1000*d.hazardMul; turbo=0; turboMax=TURBO_TIME; airJumps=0; lastJumpHeld=false;
+  newRecord=false; bestAtStart=best; fwTimer=0; overT=0;
+  paused=false; gameGold=0; gameAir=0; gameBones=0;
+  discs=[]; pendingThrows=0;
+  camShake=0; transitionAlpha=1;
+  setMessage('ROUND 1', 90);
+  audio(); startAmbient(); SFX.round(); startMusic();
+  setTimeout(launchDisc, 900*d.spawnMul);
+}
+
+// fine partita: aggiorna il record e apre la classifica/il nome se il punteggio ci entra
+function endRound(){
+  state = 'over';
+  transitionAlpha = 1; triggerShake(5, 16);
+  stopMusic();
+  if (score > bestAtStart && score > 0) newRecord = true;
+  newRecord ? SFX.record() : SFX.over();
+  // sicurezza in più: in modalità allenamento il punteggio non deve MAI contare per record,
+  // ossa, livello del cane o classifica (oltre al fatto che qui non si arriva mai in allenamento,
+  // perché i blocchi miss sopra evitano proprio la chiamata a endRound in quel caso)
+  if (SET.training) return;
+  if (score > best){ best = score; localStorage.setItem('dd_best', best); }
+  // ossa raccolte in questa partita: si sommano al gruzzolo permanente per potenziare Fio
+  roundBonesEarned = gameBones;
+  if (roundBonesEarned > 0){ dogBones += roundBonesEarned; saveDogProgress(); }
+  // livello giocatore: il punteggio si somma all'esperienza totale accumulata in tutte le partite
+  if (score > 0){
+    const prevRank = rankIndex(totalXP);
+    totalXP += score;
+    localStorage.setItem('dd_xp', totalXP);
+    const newRank = rankIndex(totalXP);
+    if (newRank > prevRank){
+      showTrophyMsg('🎖️ Nuovo livello: ' + RANKS[newRank].name + '!', 170);
+      SFX.trophy();
+      // un nuovo salto di livello può sbloccare anche una nuova razza di cane
+      DOGS.filter(d => d.unlockRank > prevRank && d.unlockRank <= newRank).forEach(d => {
+        showTrophyMsg('🐕 Nuovo cane sbloccato: ' + d.name + '!', 170);
+        SFX.trophy();
+      });
+    }
+  }
+  if (qualifies(score)) askName();
+}
+
+function setMessage(t, frames){ message=t; msgTimer=frames; }
+
+// ---------- FRISBEE LAUNCH ----------
+function spawnDisc(){
+  const power = Math.min(1, 0.55 + round*0.06);           // gets harder
+  // i lanci molto alti (che servono il doppio salto per essere presi) escono
+  // solo mentre il turbo dell'osso è attivo; altrimenti restano alla portata di un salto normale
+  const highOk = turbo > 0;
+  const vy0 = highOk ? -(9 + Math.random()*4) : -(7 + Math.random()*2);
+  const d = {
+    x: thrower.x + 30, y: thrower.y - 60,
+    vx: (5 + Math.random()*4*power + round*0.25) * DIFF[difficulty].speedMul,
+    vy: vy0,
+    curve: (Math.random()*2-1) * (1.5 + round*0.2),       // curva!
+    rot: 0, trail: [], bounces: 0, dead: null,
+    gold: Math.random() < (0.08 + dogLuckBonus()),        // raro: ~1 lancio su 12 (di più con la Fortuna)
+    boomerang: Math.random() < 0.12, bt: 0                // ogni tanto torna indietro!
+  };
+  if (d.boomerang){
+    // volo dedicato: vola dritto fino quasi al bordo dello schermo, poi torna,
+    // sempre in aria (niente rimbalzi che lo farebbero fermare a metà corsa)
+    d.vx0 = 9 + Math.random()*3;                // velocità costante, non legata al round
+    d.y0 = d.y; d.x0 = d.x;                     // punto di partenza: qui deve tornare
+    const apexDist = W * 0.60;                  // quanto va lontano prima di girare
+    d.bT = apexDist * Math.PI / d.vx0;          // durata dell'andata, calcolata per arrivarci sempre
+    d.vx = d.vx0;
+  }
+  discs.push(d); thrown++;
+  throwAnim = 16;
+  SFX.throw_();
+  if (d.gold) SFX.goldSpawn();
+  if (d.boomerang) SFX.boomSpawn();
+}
+function launchDisc(){
+  if (state!=='play') return;
+  round++;
+  if (round >= 9) award('night');
+  spawnDisc();
+  // doppio frisbee dai round avanzati!
+  if (round >= 6 && Math.random() < 0.25){
+    pendingThrows++;
+    setMessage('DOPPIO!', 55);
+    setTimeout(() => {
+      pendingThrows--;
+      if (state==='play') spawnDisc();
+    }, 450);
+  }
+}
+
+// ---------- PHYSICS ----------
+function update(){
+  if (paused && state === 'play') return;   // pausa: tutto fermo
+
+  const dnU = dayNight();
+  // delfini di giorno
+  dolphinTimer--;
+  if (dolphinTimer <= 0 && dnU.night < 0.4 && dolphins.length < 2){
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const n = Math.random() < 0.3 ? 2 : 1;   // a volte in coppia!
+    for (let i=0;i<n;i++) dolphins.push({
+      x: (dir > 0 ? -30 : W+30) - dir*i*55,
+      y0: GROUND - 30, dir, t: -i*0.18
+    });
+    dolphinTimer = 500 + Math.random()*700;
+  }
+  dolphins.forEach(d => {
+    d.t += 0.018;
+    d.x += d.dir * 2.2;
+    if (d.t > -0.01 && d.t < 0.03) puff(d.x, d.y0+6, 'rgba(255,255,255,.9)', 5);
+    if (d.t > 0.97 && d.t < 1.0) puff(d.x, d.y0+6, 'rgba(255,255,255,.9)', 5);
+  });
+  dolphins = dolphins.filter(d => d.t < 1.05 && d.x > -60 && d.x < W+60);
+
+  // stelle cadenti di notte
+  shooterTimer--;
+  if (shooterTimer <= 0 && dnU.night > 0.6){
+    shooters.push({
+      x: W*0.3 + Math.random()*W*0.7, y: 30 + Math.random()*100,
+      vx: -(5 + Math.random()*4), vy: 2 + Math.random()*1.5,
+      life: 45, trail: []
+    });
+    shooterTimer = 250 + Math.random()*500;
+  }
+  shooters.forEach(s => {
+    s.trail.push({x:s.x, y:s.y});
+    if (s.trail.length > 14) s.trail.shift();
+    s.x += s.vx; s.y += s.vy; s.life--;
+  });
+  shooters = shooters.filter(s => s.life > 0);
+
+  // scenografia extra: temporale vero (nuvole, pioggia, tuoni, fulmini), poi arcobaleno
+  if (!weather){
+    weatherTimer--;
+    if (weatherTimer <= 0 && dnU.night < 0.2){
+      weather = { phase:'storm', t:0 };
+      // sparse subito su tutto il cielo (non solo fuori schermo a sinistra), così la copertura
+      // nuvolosa è già presente quando l'intensità del temporale arriva al culmine
+      stormClouds = Array.from({length:8}, () => ({ x: Math.random()*(W+200)-100, y:10+Math.random()*80, s:.9+Math.random()*.6 }));
+      raindrops = [];
+      thunderTimer = 120 + Math.random()*150;
+    }
+  } else if (weather.phase === 'storm'){
+    weather.t++;
+    const inten = stormIntensity(weather.t);
+    // nuvole scure che scorrono, rimpiazzate finché il temporale non sta finendo
+    stormClouds.forEach(c => c.x += 0.7);
+    stormClouds = stormClouds.filter(c => c.x < W+170);
+    if (stormClouds.length < 8 && weather.t < STORM_TOTAL-STORM_FADE && Math.random() < 0.04){
+      stormClouds.push({ x:-140, y:10+Math.random()*80, s:.9+Math.random()*.6 });
+    }
+    // pioggia: intensità (numero di gocce generate) proporzionale alla fase del temporale
+    if (inten > 0.05){
+      const drops = Math.round(inten*3.5);
+      for (let i=0;i<drops;i++) raindrops.push({ x: Math.random()*(W+200)-100, y:-10, vy:11+Math.random()*4, len:10+Math.random()*9 });
+      if (Math.random() < inten*0.2) puff(Math.random()*W, GROUND+2, 'rgba(210,225,245,.55)', 2);
+    }
+    raindrops.forEach(r => { r.y += r.vy; r.x -= 2.2; });
+    raindrops = raindrops.filter(r => r.y < GROUND+10);
+    // tuoni e fulmini, solo quando il temporale è al culmine
+    if (lightning > 0) lightning--;
+    thunderTimer--;
+    if (thunderTimer <= 0 && inten > 0.5){
+      lightning = 6;
+      SFX.thunder();
+      thunderTimer = 220 + Math.random()*280;
+    }
+    if (weather.t >= STORM_TOTAL){
+      weather = { phase:'rainbow', t:0 };
+      raindrops = []; stormClouds = [];
+    }
+  } else if (weather.phase === 'rainbow'){
+    weather.t++;
+    if (weather.t > RAINBOW_TOTAL){ weather = null; weatherTimer = 1800 + Math.random()*1400; }
+  }
+
+  // barchette (anche nei menu, fanno scena)
+  boatTimer--;
+  if (boatTimer <= 0 && boats.length < 3){ spawnBoat(); boatTimer = 300 + Math.random()*500; }
+  boats.forEach(b => { b.x += b.vx; b.bob += 0.03; });
+  boats = boats.filter(b => b.x > -90 && b.x < W+90);
+
+  // particelle, nuvole e messaggi si muovono anche nei menu
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; });
+  clouds.forEach(c => { c.x += 0.15*c.s; if (c.x > W+80) c.x = -80; });
+  if (msgTimer > 0) msgTimer--;
+  if (trophyTimer > 0){
+    trophyTimer--;
+    if (trophyTimer <= 0 && trophyQueue.length){
+      const nxt = trophyQueue.shift();
+      trophyMsg = nxt.msg; trophyTimer = nxt.dur;
+    }
+  }
+
+  // effetti camera: la scossa si esaurisce
+  if (camShake > 0) camShake--;
+  if (throwAnim > 0) throwAnim--;
+  // dissolvenza tra le schermate
+  if (transitionAlpha > 0) transitionAlpha = Math.max(0, transitionAlpha - 0.06);
+
+  // spruzzo di schiuma occasionale sulla battigia, solo per atmosfera
+  if (Math.random() < 0.012){
+    const wx = Math.random()*W;
+    particles.push({ x:wx, y:GROUND-44, vx:(Math.random()*2-1)*0.4, vy:-0.3-Math.random()*0.4,
+      life: 18+Math.random()*14, color:'rgba(255,255,255,.8)' });
+  }
+
+  // festa del record al game over: fuochi d'artificio e Fio che corre avanti e indietro abbaiando
+  if (state === 'over' && newRecord){
+    fwTimer--;
+    if (fwTimer <= 0){
+      burst(80 + Math.random()*(W-160), 60 + Math.random()*160,
+            FW_COLORS[Math.floor(Math.random()*FW_COLORS.length)]);
+      SFX.pop();
+      fwTimer = 22 + Math.random()*30;
+    }
+    overT += 0.11;
+    const RUN_SPEED = 5.5;
+    dog.x += RUN_SPEED * dog.dir;
+    dog.y = GROUND - Math.abs(Math.sin(overT))*10;   // piccolo saltello mentre corre
+    dog.anim += 0.28;
+    if (dog.x > W-50){ dog.x = W-50; dog.dir = -1; SFX.bark(); }
+    if (dog.x < 50){ dog.x = 50; dog.dir = 1; SFX.bark(); }
+  }
+
+  if (state !== 'play') return;
+
+  // dog movement
+  if (turbo > 0) turbo--;
+  const SPEED = (turbo > 0 ? 7.6 : 5.2) * dogSpeedMul();
+  dog.vx = 0;
+  const jumpHeld = !!(keys['Space']||keys['ArrowUp']);
+  // al livello massimo di Salto, il doppio salto in aria resta disponibile anche senza turbo
+  const doubleJumpAvailable = turbo > 0 || dogLevels.jump >= dogStatMax('jump');
+  if (dog.stun > 0){
+    dog.stun--;
+  } else {
+    const keyDir = (keys['ArrowLeft']?-1:0) + (keys['ArrowRight']?1:0);
+    const moveInput = keyDir !== 0 ? keyDir : joyDir; // tastiera prioritaria, altrimenti joystick analogico
+    if (Math.abs(moveInput) > 0.08){ dog.vx = SPEED * moveInput; dog.dir = moveInput < 0 ? -1 : 1; }
+    if (jumpHeld && dog.onGround){
+      dog.vy = -12.5 * dogJumpMul(); dog.onGround = false; dog.jumpSpin = 0; airJumps = 0;
+      SFX.jump();
+    } else if (jumpHeld && !lastJumpHeld && !dog.onGround && doubleJumpAvailable && airJumps < 1){
+      // doppio salto turbo!
+      dog.vy = -11 * dogJumpMul(); airJumps++;
+      SFX.jump();
+      puff(dog.x, dog.y, '#ffd23f', 8);
+    }
+  }
+  lastJumpHeld = jumpHeld;
+  // scia turbo
+  if (turbo > 0 && Math.abs(dog.vx) > 0 && Math.random() < 0.5){
+    particles.push({ x: dog.x - dog.dir*26, y: dog.y - 8 - Math.random()*14,
+      vx: -dog.dir*(1+Math.random()), vy: -Math.random(),
+      life: 12+Math.random()*10, color: Math.random()<0.5 ? '#ffd23f' : '#fff' });
+  }
+  // sabbia sollevata dalla corsa (solo a terra, niente turbo attivo)
+  if (turbo <= 0 && dog.onGround && Math.abs(dog.vx) > 0 && Math.random() < 0.6){
+    particles.push({ x: dog.x - dog.dir*22, y: dog.y + 2,
+      vx: -dog.dir*(0.4+Math.random()*0.6) + dog.vx*0.15, vy: -0.6-Math.random()*0.6,
+      life: 10+Math.random()*8, color: '#d9c088' });
+  }
+  dog.x += dog.vx;
+  dog.vy += 0.55;
+  dog.y += dog.vy;
+  if (dog.y >= GROUND){ dog.y = GROUND; dog.vy = 0; dog.onGround = true; dog.jumpSpin = 0; airJumps = 0; }
+  if (!dog.onGround) dog.jumpSpin += 0.25;
+  dog.x = Math.max(20, Math.min(W-20, dog.x));
+  dog.anim += Math.abs(dog.vx)*0.08 + 0.02;
+
+  // ---- gabbiano dispettoso ----
+  gullTimer--;
+  if (gullTimer <= 0 && !gull){
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    gull = {
+      x: dir > 0 ? -50 : W+50, y: 60 + Math.random()*130,
+      vx: dir * (2.2 + Math.random()*1.6), flap: 0, hit: false,
+      carry: false, dropX: 0
+    };
+    // se è ora dell'osso, lo porta il gabbiano!
+    if (boneTimer <= 0 && !bone && turbo <= 0){
+      gull.carry = true;
+      gull.dropX = 120 + Math.random()*(W-240);
+    }
+  }
+  if (gull){
+    gull.x += gull.vx;
+    gull.y += Math.sin(gull.flap*0.5)*0.6;
+    gull.flap += 0.35;
+    // se tocca un frisbee, lo devia!
+    for (const d of discs){
+      if (!gull.hit && Math.abs(d.x-gull.x) < 24 && Math.abs(d.y-gull.y) < 18){
+        gull.hit = true;
+        d.vy = (Math.random()<0.5 ? -1 : 1) * (2 + Math.random()*3);
+        d.vx *= 0.6 + Math.random()*0.7;
+        d.curve = -d.curve * 1.6;
+        setMessage('GABBIANO!', 50);
+        SFX.squawk();
+        puff(gull.x, gull.y, '#ffffff', 12);
+      }
+    }
+    // sgancia l'osso sul punto scelto
+    if (gull.carry && Math.abs(gull.x - gull.dropX) < 8){
+      gull.carry = false;
+      bone = { x: gull.x, y: gull.y + 16, vy: 0.5, falling: true, t: 0, life: 650 };
+      SFX.squawk();
+    }
+    if (gull.x < -70 || gull.x > W+70){ gull = null; gullTimer = (350 + Math.random()*550) * DIFF[difficulty].hazardMul; }
+  }
+
+  // ---- granchio sulla sabbia ----
+  crabTimer--;
+  if (crabTimer <= 0 && !crab){
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    crab = {
+      x: dir > 0 ? -40 : W+40, vx: dir * (1.1 + Math.random()*0.9), walk: 0
+    };
+  }
+  if (crab){
+    crab.x += crab.vx;
+    crab.walk += 0.25;
+    // pizzica Fio se lo tocca a terra (con breve tregua dopo un pizzico)
+    if (dog.grace > 0) dog.grace--;
+    if (dog.stun <= 0 && !dog.grace && dog.onGround && Math.abs(dog.x-crab.x) < 32){
+      dog.stun = 55; dog.grace = 130;
+      streak = 0;                       // il granchio azzera anche la combo!
+      setMessage('OUCH! GRANCHIO!', 55);
+      SFX.ouch();
+      puff(dog.x, dog.y-16, '#ff5a5a', 10);
+      triggerShake(4, 12);
+    }
+    if (crab.x < -60 || crab.x > W+60){ crab = null; crabTimer = (500 + Math.random()*800) * DIFF[difficulty].hazardMul; }
+  }
+
+  // ---- osso turbo (consegnato dal gabbiano) ----
+  boneTimer--;
+  // se l'osso è in ritardo e non c'è un gabbiano in giro, chiamalo prima
+  if (boneTimer <= 0 && !bone && turbo <= 0 && !gull && gullTimer > 90) gullTimer = 90;
+  if (bone){
+    if (bone.falling){
+      bone.vy += 0.35;
+      bone.y += bone.vy;
+      if (bone.y >= GROUND + 18){
+        bone.y = GROUND + 18; bone.falling = false;
+        puff(bone.x, GROUND + 14, '#e8d8a0', 8);
+      }
+    } else {
+      bone.t += 0.08;
+      bone.life--;
+    }
+    const preso = bone.falling
+      ? Math.hypot(dog.x + dog.dir*22 - bone.x, (dog.y - 26) - bone.y) < 36   // al volo!
+      : (dog.y >= GROUND-6 && Math.abs(dog.x - bone.x) < 32);                 // da terra
+    if (preso){
+      turboMax = Math.round(TURBO_TIME * dogTurboMul());
+      turbo = turboMax;
+      gameBones++; if (gameBones >= 3) award('bone3');
+      setMessage(bone.falling ? 'OSSO AL VOLO! TURBO!' : 'TURBO!', 60);
+      SFX.turbo();
+      puff(bone.x, bone.y, '#ffd23f', 16);
+      bone = null; boneTimer = (800 + Math.random()*900) * DIFF[difficulty].hazardMul;
+    } else if (!bone.falling && bone.life <= 0){
+      bone = null; boneTimer = (700 + Math.random()*800) * DIFF[difficulty].hazardMul;
+    }
+  }
+
+  // discs (anche più di uno in volo)
+  const hadDiscs = discs.length > 0;
+  for (const d of discs){
+    d.trail.push({x:d.x, y:d.y});
+    if (d.trail.length > 18) d.trail.shift();
+
+    if (d.boomerang){
+      // volo dedicato: fila dritto verso il bordo dello schermo, poi torna indietro morbidamente,
+      // restando sempre in aria (nessun rimbalzo che lo interrompa a metà corsa)
+      d.bt++;
+      const p = Math.min(d.bt / d.bT, 1);
+      d.vx = d.vx0 * Math.cos(p * Math.PI);           // da +vx0 a 0 a -vx0, con dolcezza
+      d.x += d.vx;
+      d.y = d.y0 - Math.sin(p * Math.PI) * 80;        // leggero arco in salita e ridiscesa
+      d.rot += 0.35;
+      if (d.bt === Math.round(d.bT/2)) SFX.boomTurn();  // il momento in cui inverte rotta
+      // scia viola per tutto il volo
+      if (Math.random() < 0.3){
+        particles.push({
+          x: d.x + (Math.random()*2-1)*8, y: d.y + (Math.random()*2-1)*6,
+          vx:(Math.random()*2-1)*0.6, vy:-Math.random()*0.6,
+          life: 14+Math.random()*14, color: Math.random()<0.5 ? '#8a6bff' : '#d8ccff'
+        });
+      }
+    } else {
+      d.vy += 0.32;
+      d.vx += d.curve * 0.02;                 // curva in volo
+      d.vx *= 0.999;
+      d.x += d.vx;
+      d.y += d.vy;
+      d.rot += 0.35;
+
+      // scia scintillante del frisbee dorato
+      if (d.gold && Math.random() < 0.35){
+        particles.push({
+          x: d.x + (Math.random()*2-1)*10, y: d.y + (Math.random()*2-1)*6,
+          vx:(Math.random()*2-1)*0.8, vy:-Math.random()*0.8,
+          life: 15+Math.random()*15, color: Math.random()<0.5 ? '#ffd23f' : '#fff7d0'
+        });
+      }
+
+      // ground bounce (max 2, then it's a miss when it stops/offscreen)
+      if (d.y > GROUND + 8 && d.vy > 0){
+        d.y = GROUND + 8;
+        d.vy *= -0.55;
+        d.vx *= 0.75;
+        d.bounces++;
+        SFX.bounce();
+        puff(d.x, GROUND+10, '#e8d8a0', 6);
+      }
+    }
+
+    // catch check: dog mouth zone
+    const mouthX = dog.x + dog.dir*22, mouthY = dog.y - 26;
+    if (Math.hypot(d.x-mouthX, d.y-mouthY) < 34){
+      const air = !dog.onGround;
+      const spinBonus = Math.floor(dog.jumpSpin / (Math.PI*2));
+      streak++;
+      const mult = Math.min(streak, 5);   // combo: x1, x2 ... fino a x5
+      let pts = 100;
+      if (air) pts = 250 + spinBonus*150;
+      if (d.gold) pts = 500 + (air ? spinBonus*150 : 0);
+      if (d.boomerang) pts += 50;             // bonus per la ripresa al rientro
+      pts *= mult;
+      const tag = mult > 1 ? ` x${mult}` : '';
+      const boomTag = d.boomerang ? ' 🪃' : '';
+      if (d.gold){
+        setMessage(`GOLDEN! +${pts}${tag}${boomTag}`, 80);
+        SFX.golden();
+        puff(d.x, d.y, '#ffd23f', 30);
+        puff(d.x, d.y, '#fff7d0', 15);
+      } else if (d.boomerang){
+        setMessage(`BOOMERANG! +${pts}${tag}`, 65);
+        SFX.acro();
+        puff(d.x, d.y, '#8a6bff', 22);
+        puff(d.x, d.y, '#d8ccff', 12);
+      } else {
+        setMessage((air ? `ACROBATIC! +${pts}` : `+${pts}`) + tag, 60);
+        air ? SFX.acro() : SFX.catch_();
+        puff(d.x, d.y, air ? '#ffd23f' : '#7ec8e3', air?20:10);
+      }
+      score += pts; catches++;
+      d.dead = 'caught';
+      SFX.bark();   // woof woof!
+      // tratto unico di Sprint: le prese consecutive senza errori ricaricano un po' di turbo
+      if (selectedDog().trait === 'turboChain' && streak >= 2){
+        turbo = Math.min(turboMax, turbo + 14);
+      }
+      // trofei
+      award('first');
+      if (mult >= 5) award('combo5');
+      if (streak >= 10) award('ten');
+      if (d.gold){ gameGold++; if (gameGold >= 3) award('gold3'); }
+      if (air){ gameAir++; if (gameAir >= 10) award('acro10'); }
+      if (score >= 10000) award('legend');
+      // record battuto in diretta!
+      if (!newRecord && bestAtStart > 0 && score > bestAtStart){
+        newRecord = true;
+        setMessage('NUOVO RECORD!', 90);
+        SFX.record();
+        burst(W/2, 150, '#ffd23f');
+        burst(W/2-120, 190, '#7ec8e3');
+        burst(W/2+120, 190, '#ff5a5a');
+        triggerShake(7, 26);
+      }
+      // vita extra ogni 2000 punti!
+      while (score >= nextLife){
+        nextLife += 2000;
+        if (misses > 0){
+          misses--;
+          setMessage('MISS RECUPERATO! ♥', 75);
+          SFX.life();
+        } else if (maxMiss < 5){
+          maxMiss++;
+          setMessage('VITA EXTRA! ♥', 75);
+          SFX.life();
+        }
+      }
+      continue;
+    }
+
+    // il boomerang non preso torna dal lanciatore e finisce lì (non esce dallo schermo)
+    if (d.boomerang && d.bt >= d.bT && d.x <= d.x0){
+      d.dead = 'miss';
+      misses++;
+      streak = 0;
+      setMessage('TORNATO AL LANCIATORE', 55);
+      puff(d.x0, d.y0, '#8a6bff', 12);
+      if (misses >= maxMiss){
+        if (SET.training){ misses = 0; setMessage('ALLENAMENTO: si continua!', 60); SFX.whine(); }
+        else endRound();
+      } else {
+        SFX.whine();
+      }
+      continue;
+    }
+
+    // miss: offscreen or stopped bouncing
+    if (d.x > W+40 || d.x < -40 || (d.bounces >= 2 && d.vy > -1 && d.y >= GROUND+7)){
+      d.dead = 'miss';
+      misses++;
+      streak = 0;   // la combo si azzera
+      setMessage('MISS!', 60);
+      if (misses >= maxMiss){
+        if (SET.training){ misses = 0; setMessage('ALLENAMENTO: si continua!', 60); SFX.miss(); SFX.whine(); }
+        else endRound();
+      } else {
+        SFX.miss();
+        SFX.whine();   // guaito dispiaciuto
+      }
+    }
+  }
+  discs = discs.filter(d => !d.dead);
+  // quando non c'è più niente in volo (e niente in arrivo), nuovo lancio
+  if (state === 'play' && hadDiscs && discs.length === 0 && pendingThrows === 0){
+    setTimeout(launchDisc, 850*DIFF[difficulty].spawnMul);
+  }
+
+}
+
+function puff(x,y,color,n){
+  for (let i=0;i<n;i++) particles.push({
+    x, y, vx:(Math.random()*2-1)*3, vy:-Math.random()*3,
+    life: 20+Math.random()*20, color
+  });
+}
+
+// ---------- CICLO GIORNO / TRAMONTO / NOTTE ----------
+const PAL_DAY = [[74,163,223],[135,206,235],[201,236,255]];
+const PAL_SUN = [[90,60,140],[255,140,90],[255,215,160]];
+const PAL_NGT = [[8,8,40],[24,34,84],[45,60,110]];
+function mixC(a,b,t){ return [0,1,2].map(i => Math.round(a[i]+(b[i]-a[i])*t)); }
+function css(c){ return `rgb(${c[0]},${c[1]},${c[2]})`; }
+function dayNight(){
+  // ogni round avanza l'orologio; il ciclo ricomincia ogni 12 round
+  const f = round > 0 ? ((round-1) % 12) / 12 : 0;
+  let pal, night = 0, sunset = 0;
+  if (f < 0.30){ pal = PAL_DAY; }
+  else if (f < 0.45){ const t=(f-0.30)/0.15; sunset=t; pal = PAL_DAY.map((c,i)=>mixC(c,PAL_SUN[i],t)); }
+  else if (f < 0.60){ const t=(f-0.45)/0.15; sunset=1-t; night=t; pal = PAL_SUN.map((c,i)=>mixC(c,PAL_NGT[i],t)); }
+  else if (f < 0.90){ night=1; pal = PAL_NGT; }
+  else { const t=(f-0.90)/0.10; night=1-t; pal = PAL_NGT.map((c,i)=>mixC(c,PAL_DAY[i],t)); }
+  return { pal, night, sunset };
+}
+
+// ---------- DECORAZIONI STAGIONALI (in base alla data reale) ----------
+function seasonalTheme(){
+  const now = new Date();
+  const mo = now.getMonth(), da = now.getDate();          // 0=gennaio
+  if (mo === 11) return 'natale';                          // dicembre
+  if (mo === 9 && da >= 24) return 'halloween';             // fine ottobre
+  return null;
+}
+function drawSeasonal(theme){
+  if (theme === 'natale'){
+    // festoncini luminosi in cima allo schermo
+    const t = performance.now()/300;
+    for (let i=0; i<12; i++){
+      const x = 20 + i*(W-40)/11;
+      const y = 8 + Math.sin(i*0.9)*6;
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.quadraticCurveTo(x, y+14, x, y+18); ctx.stroke();
+      const colors = ['#ff5a5a','#7eff9e','#ffd23f','#7ec8e3'];
+      ctx.fillStyle = colors[i%4];
+      ctx.globalAlpha = 0.55 + 0.45*Math.abs(Math.sin(t + i));
+      ctx.beginPath(); ctx.arc(x, y+18, 4, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if (theme === 'halloween'){
+    // zucca sulla sabbia
+    ctx.save(); ctx.translate(W-70, GROUND-14);
+    ctx.fillStyle = '#e8790f';
+    ctx.beginPath(); ctx.ellipse(0,0,20,15,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#3a7a2a'; ctx.fillRect(-3,-20,6,8);
+    ctx.fillStyle = '#2a1a0a';
+    ctx.beginPath(); ctx.moveTo(-9,-4); ctx.lineTo(-4,-8); ctx.lineTo(0,-4); ctx.lineTo(4,-8); ctx.lineTo(9,-4);
+    ctx.lineTo(6,4); ctx.lineTo(-6,4); ctx.closePath(); ctx.fillStyle='rgba(255,180,60,.9)'; ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------- DRAWING ----------
+function draw(){
+  syncUI();
+  ctx.save();
+  if (camShake > 0){
+    const m = camShakeMag * (camShake/16);
+    ctx.translate((Math.random()*2-1)*m, (Math.random()*2-1)*m);
+  }
+  const dn = dayNight();
+  // sky
+  const sky = ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0, css(dn.pal[0])); sky.addColorStop(0.6, css(dn.pal[1])); sky.addColorStop(1, css(dn.pal[2]));
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+
+  // cielo che si scurisce col temporale in arrivo
+  const stormInten = (weather && weather.phase === 'storm') ? stormIntensity(weather.t) : 0;
+  if (stormInten > 0){
+    ctx.fillStyle = `rgba(40,46,72,${0.4*stormInten})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // stelle di notte
+  if (dn.night > 0.05){
+    stars.forEach(s => {
+      ctx.globalAlpha = dn.night * (0.4 + 0.6*Math.abs(Math.sin(performance.now()/700 + s.tw)));
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(s.x, s.y, 2, 2);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // stelle cadenti
+  shooters.forEach(s => {
+    s.trail.forEach((t,i) => {
+      ctx.globalAlpha = (i/s.trail.length) * Math.min(1, s.life/15) * 0.9;
+      ctx.fillStyle = '#fff';
+      const sz = 1 + (i/s.trail.length)*2.5;
+      ctx.fillRect(t.x, t.y, sz, sz);
+    });
+  });
+  ctx.globalAlpha = 1;
+
+  // sole (tramonta) / luna (di notte)
+  if (dn.night < 1){
+    ctx.globalAlpha = 1 - dn.night;
+    const sunC = mixC([255,233,138],[255,140,60], dn.sunset);
+    const sy = 80 + dn.sunset*70 + dn.night*120;
+    ctx.fillStyle = css(sunC);
+    ctx.beginPath(); ctx.arc(W-110, sy, 42, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = (1 - dn.night)*0.35;
+    ctx.beginPath(); ctx.arc(W-110, sy, 60, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  if (dn.night > 0.2){
+    ctx.globalAlpha = Math.min(1, dn.night);
+    ctx.fillStyle = '#f4f1de';
+    ctx.beginPath(); ctx.arc(W-140, 90, 30, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = css(dn.pal[0]);
+    ctx.beginPath(); ctx.arc(W-152, 82, 26, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // arcobaleno (compare dopo il temporale, verso il mare)
+  if (weather && weather.phase === 'rainbow'){
+    let a = 1;
+    if (weather.t < RAINBOW_FADE) a = weather.t/RAINBOW_FADE;
+    else if (weather.t > RAINBOW_TOTAL-RAINBOW_FADE) a = Math.max(0, (RAINBOW_TOTAL-weather.t)/RAINBOW_FADE);
+    const rcx = W*0.32, rcy = GROUND-46;
+    const rColors = ['#ff5a5a','#ffb347','#ffd23f','#7eff9e','#7ec8e3','#8a6bff'];
+    ctx.save();
+    ctx.globalAlpha = a*0.75;
+    rColors.forEach((c,i) => {
+      ctx.strokeStyle = c; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.arc(rcx, rcy, 132 - i*9, Math.PI, 2*Math.PI); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // clouds
+  ctx.fillStyle = `rgba(255,255,255,${0.85 - dn.night*0.55})`;
+  clouds.forEach(c => {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 22*c.s, 0, Math.PI*2);
+    ctx.arc(c.x+24*c.s, c.y+4, 17*c.s, 0, Math.PI*2);
+    ctx.arc(c.x-24*c.s, c.y+6, 15*c.s, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // nuvoloni scuri del temporale (in entrata/uscita si dissolvono insieme al resto della scena)
+  if (stormInten > 0){
+    ctx.fillStyle = `rgba(55,60,86,${0.82*stormInten})`;
+    stormClouds.forEach(c => {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 34*c.s, 0, Math.PI*2);
+      ctx.arc(c.x+38*c.s, c.y+6, 26*c.s, 0, Math.PI*2);
+      ctx.arc(c.x-38*c.s, c.y+8, 24*c.s, 0, Math.PI*2);
+      ctx.arc(c.x+10*c.s, c.y-14, 22*c.s, 0, Math.PI*2);
+      ctx.fill();
+    });
+  }
+
+  // sea strip
+  ctx.fillStyle = '#3f8fc9'; ctx.fillRect(0, GROUND-46, W, 46);
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  for (let i=0;i<10;i++){
+    const wx = (i*110 + (performance.now()/40 % 110));
+    ctx.fillRect(wx, GROUND-40+(i%3)*14, 40, 3);
+  }
+
+  // delfini che saltano
+  dolphins.forEach(drawDolphin);
+
+  // barchette a vela
+  boats.forEach(drawBoat);
+
+  // gabbiano
+  if (gull) drawGull();
+
+  // sand
+  ctx.fillStyle = '#f0dfa8'; ctx.fillRect(0, GROUND, W, H-GROUND);
+  ctx.fillStyle = '#e2cd8a';
+  for (let i=0;i<25;i++) ctx.fillRect((i*97)%W, GROUND+15+(i*37)%(H-GROUND-20), 8, 3);
+
+  drawThrower();
+  if (bone) drawBone();
+  if (crab) drawCrab();
+  discs.forEach(drawDisc);
+  drawDog();
+  const seasonTheme = seasonalTheme();
+  if (seasonTheme) drawSeasonal(seasonTheme);
+
+  // pioggia: righe diagonali che cadono davanti a tutta la scena
+  if (stormInten > 0 && raindrops.length){
+    ctx.strokeStyle = `rgba(210,225,245,${0.6*stormInten})`;
+    ctx.lineWidth = 1.4;
+    raindrops.forEach(r => {
+      ctx.beginPath();
+      ctx.moveTo(r.x, r.y);
+      ctx.lineTo(r.x-4, r.y+r.len);
+      ctx.stroke();
+    });
+  }
+
+  // lampo del temporale: illumina bruscamente tutta la scena
+  if (lightning > 0){
+    ctx.fillStyle = `rgba(255,255,255,${(lightning/6)*0.55})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // oscurità notturna sulla scena (HUD e particelle restano vivi)
+  if (dn.night > 0){
+    ctx.fillStyle = `rgba(8,8,35,${dn.night*0.28})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life/30;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x-2, p.y-2, 5, 5);
+  });
+  ctx.globalAlpha = 1;
+
+  // HUD
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 22px "Courier New"';
+  ctx.fillStyle = '#000'; ctx.fillText('SCORE ' + score, 18, 35);
+  ctx.fillStyle = '#ffd23f'; ctx.fillText('SCORE ' + score, 16, 33);
+  ctx.fillStyle = '#000'; ctx.fillText('BEST ' + best, 18, 62);
+  ctx.fillStyle = '#7ec8e3'; ctx.fillText('BEST ' + best, 16, 60);
+
+  // misses (frisbee icons)
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 20px "Courier New"';
+  ctx.fillStyle = '#ff5a5a';
+  ctx.fillText('MISS ' + misses + '/' + maxMiss, W-125, 33);
+
+  // etichetta modalità allenamento (niente game over, niente record/XP)
+  if (SET.training && state === 'play'){
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 14px "Courier New"';
+    ctx.fillStyle = '#7eff9e';
+    ctx.fillText('🏋️ ALLENAMENTO', 16, 108);
+  }
+
+  // barra turbo
+  if (turbo > 0){
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 16px "Courier New"';
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText('TURBO', 16, 84);
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.fillRect(80, 72, 104, 12);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(82, 74, 100 * (turbo/turboMax), 8);
+  }
+
+  // combo
+  if (state === 'play' && streak > 1){
+    const mult = Math.min(streak, 5);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 26px "Courier New"';
+    ctx.fillStyle = '#000'; ctx.fillText('COMBO x' + mult, W/2+2, 37);
+    ctx.fillStyle = mult >= 5 ? '#ffd23f' : '#7eff9e';
+    ctx.fillText('COMBO x' + mult, W/2, 35);
+  }
+
+  // banner trofeo sbloccato
+  if (trophyTimer > 0){
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 24px "Courier New"';
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    const tw = ctx.measureText(trophyMsg).width;
+    ctx.fillRect(W/2 - tw/2 - 16, 196, tw + 32, 36);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(trophyMsg, W/2, 222);
+  }
+
+  // center message
+  if (msgTimer > 0){
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 44px "Courier New"';
+    ctx.fillStyle = '#000';
+    ctx.fillText(message, W/2+3, 163);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(message, W/2, 160);
+  }
+
+  if (paused && state === 'play'){
+    ctx.fillStyle = 'rgba(10,10,30,.6)'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 52px "Courier New"';
+    ctx.fillStyle = '#000'; ctx.fillText('PAUSA', W/2+3, H/2+3);
+    ctx.fillStyle = '#ffd23f'; ctx.fillText('PAUSA', W/2, H/2);
+    ctx.font = '18px "Courier New"';
+    ctx.fillStyle = '#7ec8e3'; ctx.fillText(isTouch ? 'tocca ▶ per riprendere' : 'premi P per riprendere', W/2, H/2+40);
+    if (!isTouch){
+      ctx.font = '14px "Courier New"';
+      ctx.fillStyle = '#9aa3c0'; ctx.fillText('ESC per uscire', W/2, H/2+62);
+    }
+  }
+
+  if (state === 'title'){
+    overlay('FIO FRESBEE', 'Premi INVIO o tocca per giocare', 'Guida Fio e prendi il fresbee al volo!');
+    drawBoard(W/2, H/2+85);
+    const rk = RANKS[rankIndex(totalXP)];
+    ctx.font = '16px "Courier New"';
+    ctx.fillStyle = '#aaa';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🐕 ${selectedDog().name} · 🎖️ ${rk.name}  ·  🦴 ${dogBones} · TROFEI ${unlocked.length}/${ACH.length} · ${DIFF[difficulty].label} · ⚙ per cambiare`, W/2, H-16);
+  }
+
+  if (state === 'trophy'){
+    ctx.fillStyle = 'rgba(10,10,30,.85)'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 40px "Courier New"';
+    ctx.fillStyle = '#000'; ctx.fillText('🏆 TROFEI', W/2+3, 73);
+    ctx.fillStyle = '#ffd23f'; ctx.fillText('🏆 TROFEI', W/2, 70);
+    ctx.font = '17px "Courier New"';
+    ctx.fillStyle = '#7ec8e3';
+    ctx.fillText(`${unlocked.length} su ${ACH.length} sbloccati`, W/2, 100);
+    ACH.forEach((a,i) => {
+      const y = 140 + i*46;
+      const has = unlocked.includes(a.id);
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 20px "Courier New"';
+      ctx.fillStyle = has ? '#ffd23f' : '#555a77';
+      ctx.fillText((has ? '★ ' : '☆ ') + a.name, W/2-330, y);
+      ctx.font = '16px "Courier New"';
+      ctx.fillStyle = has ? '#fff' : '#555a77';
+      ctx.fillText(a.desc, W/2+10, y);
+    });
+    ctx.textAlign = 'center';
+    ctx.font = '17px "Courier New"';
+    ctx.fillStyle = '#7ec8e3';
+    ctx.fillText('INVIO o tocca per tornare', W/2, H-20);
+  }
+  if (state === 'over'){
+    const bonesLine = roundBonesEarned > 0 ? ` · 🦴 +${roundBonesEarned}` : '';
+    overlay('GAME OVER', `Punteggio: ${score} · Prese: ${catches}/${thrown}${bonesLine}`, 'INVIO o tocca per ricominciare');
+    drawBoard(W/2, H/2+85);
+    if (newRecord){
+      // scritta lampeggiante + Fio che salta felice sopra l'overlay
+      const blink = Math.floor(performance.now()/220) % 2 === 0;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 36px "Courier New"';
+      ctx.fillStyle = '#000';
+      ctx.fillText('★ NUOVO RECORD! ★', W/2+3, H/2-93);
+      ctx.fillStyle = blink ? '#ffd23f' : '#fff';
+      ctx.fillText('★ NUOVO RECORD! ★', W/2, H/2-96);
+      drawDog();
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life/30;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x-2, p.y-2, 5, 5);
+      });
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();   // fine trasformazione camera (scossa)
+
+  // dissolvenza tra le schermate, sempre sopra tutto e senza scossa
+  if (transitionAlpha > 0.01){
+    ctx.fillStyle = `rgba(13,13,26,${transitionAlpha})`;
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+function overlay(t1, t2, t3){
+  ctx.fillStyle = 'rgba(10,10,30,.72)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 56px "Courier New"';
+  ctx.fillStyle = '#000'; ctx.fillText(t1, W/2+4, H/2-34);
+  ctx.fillStyle = '#ffd23f'; ctx.fillText(t1, W/2, H/2-38);
+  ctx.font = 'bold 24px "Courier New"';
+  ctx.fillStyle = '#fff'; ctx.fillText(t2, W/2, H/2+12);
+  ctx.font = '18px "Courier New"';
+  ctx.fillStyle = '#7ec8e3'; ctx.fillText(t3, W/2, H/2+50);
+}
+
+function drawBoat(b){
+  ctx.save();
+  ctx.translate(b.x, b.y + Math.sin(b.bob)*2.5);
+  ctx.scale(b.s * (b.vx>0?1:-1), b.s);
+  ctx.rotate(Math.sin(b.bob)*0.04);
+  // scafo
+  ctx.fillStyle = '#7a4a22';
+  ctx.beginPath();
+  ctx.moveTo(-26,0); ctx.lineTo(26,0); ctx.lineTo(16,12); ctx.lineTo(-16,12);
+  ctx.closePath(); ctx.fill();
+  // albero
+  ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-34); ctx.stroke();
+  // vela principale colorata
+  ctx.fillStyle = `hsl(${b.hue},70%,65%)`;
+  ctx.beginPath(); ctx.moveTo(2,-32); ctx.lineTo(2,-2); ctx.lineTo(22,-2);
+  ctx.closePath(); ctx.fill();
+  // veletta bianca
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.moveTo(-2,-30); ctx.lineTo(-2,-2); ctx.lineTo(-16,-2);
+  ctx.closePath(); ctx.fill();
+  // bandierina
+  ctx.fillStyle = '#ff5a5a';
+  ctx.beginPath(); ctx.moveTo(0,-34); ctx.lineTo(10,-31); ctx.lineTo(0,-28);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawBoard(cx, top){
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 22px "Courier New"';
+  ctx.fillStyle = '#ffd23f';
+  ctx.fillText(ONLINE ? '— CLASSIFICA ONLINE —' : '— CLASSIFICA —', cx, top);
+  ctx.font = '18px "Courier New"';
+  if (boardLoading && !board.length){
+    ctx.fillStyle = '#7ec8e3';
+    ctx.fillText('Caricamento...', cx, top+30);
+    return;
+  }
+  if (!board.length){
+    ctx.fillStyle = '#7ec8e3';
+    ctx.fillText('Nessun record... ancora!', cx, top+30);
+    return;
+  }
+  board.forEach((e,i) => {
+    ctx.fillStyle = i===0 ? '#ffd23f' : '#fff';
+    const y = top+30+i*24;
+    ctx.textAlign = 'left';
+    ctx.fillText(`${i+1}. ${e.name}`, cx-150, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(String(e.score), cx+150, y);
+  });
+  ctx.textAlign = 'center';
+}
+
+function drawDolphin(d){
+  if (d.t < 0 || d.t > 1) return;
+  const y = d.y0 - Math.sin(Math.PI * d.t) * 52;
+  ctx.save();
+  ctx.translate(d.x, y);
+  ctx.rotate(-d.dir * Math.cos(Math.PI * d.t) * 0.7);
+  ctx.scale(d.dir, 1);
+  // corpo
+  ctx.fillStyle = '#6b8fa8';
+  ctx.beginPath(); ctx.ellipse(0, 0, 20, 8, 0, 0, Math.PI*2); ctx.fill();
+  // pancia chiara
+  ctx.fillStyle = '#b8d2e0';
+  ctx.beginPath(); ctx.ellipse(1, 3, 15, 4, 0, 0, Math.PI*2); ctx.fill();
+  // rostro
+  ctx.fillStyle = '#6b8fa8';
+  ctx.beginPath(); ctx.moveTo(17,-2); ctx.lineTo(27,1); ctx.lineTo(17,4); ctx.closePath(); ctx.fill();
+  // pinna dorsale
+  ctx.beginPath(); ctx.moveTo(-3,-7); ctx.lineTo(2,-15); ctx.lineTo(6,-7); ctx.closePath(); ctx.fill();
+  // coda
+  ctx.beginPath(); ctx.moveTo(-18,-1); ctx.lineTo(-27,-7); ctx.lineTo(-24,1); ctx.lineTo(-27,8); ctx.closePath(); ctx.fill();
+  // occhio
+  ctx.fillStyle = '#222'; ctx.fillRect(11,-3,3,3);
+  ctx.restore();
+}
+
+function drawGull(){
+  ctx.save();
+  ctx.translate(gull.x, gull.y);
+  ctx.scale(gull.vx > 0 ? 1 : -1, 1);
+  const w = Math.sin(gull.flap);
+  // ali
+  ctx.strokeStyle = '#f5f5f5'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-2,0); ctx.quadraticCurveTo(-14,-6-w*8, -24,-2-w*12);
+  ctx.moveTo(2,0);  ctx.quadraticCurveTo(10,-6-w*8, 18,-2-w*12);
+  ctx.stroke();
+  // corpo
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(0,0,12,6,0,0,Math.PI*2); ctx.fill();
+  // testa
+  ctx.beginPath(); ctx.arc(12,-3,5,0,Math.PI*2); ctx.fill();
+  // becco
+  ctx.fillStyle = '#ff9d2e';
+  ctx.beginPath(); ctx.moveTo(16,-3); ctx.lineTo(23,-1); ctx.lineTo(16,0);
+  ctx.closePath(); ctx.fill();
+  // occhio
+  ctx.fillStyle = '#222'; ctx.fillRect(12,-5,2,2);
+  // osso tra le zampe
+  if (gull.carry){
+    ctx.strokeStyle = '#ff9d2e'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-2,5); ctx.lineTo(-2,11); ctx.moveTo(3,5); ctx.lineTo(3,11); ctx.stroke();
+    ctx.fillStyle = '#fffbe8';
+    ctx.fillRect(-8,12,16,4);
+    [[-8,11],[-8,15],[8,11],[8,15]].forEach(p => {
+      ctx.beginPath(); ctx.arc(p[0],p[1],3.2,0,Math.PI*2); ctx.fill();
+    });
+  }
+  ctx.restore();
+}
+
+function drawBone(){
+  ctx.save();
+  ctx.translate(bone.x, bone.y + (bone.falling ? 0 : Math.sin(bone.t)*2));
+  if (bone.falling) ctx.rotate(bone.vy * 0.15);
+  // lampeggia quando sta per sparire
+  if (bone.life < 120 && Math.floor(bone.life/6) % 2 === 0) ctx.globalAlpha = 0.35;
+  // bagliore
+  ctx.fillStyle = 'rgba(255,210,63,.25)';
+  ctx.beginPath(); ctx.ellipse(0,0,26,14,0,0,Math.PI*2); ctx.fill();
+  // osso
+  ctx.fillStyle = '#fffbe8';
+  ctx.fillRect(-12,-3,24,6);
+  [[-12,-4],[-12,4],[12,-4],[12,4]].forEach(p => {
+    ctx.beginPath(); ctx.arc(p[0],p[1],5,0,Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawCrab(){
+  ctx.save();
+  ctx.translate(crab.x, GROUND + 26);
+  const w = Math.sin(crab.walk*4)*3;
+  // zampe
+  ctx.strokeStyle = '#c62815'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-10,2); ctx.lineTo(-18,8+w);
+  ctx.moveTo(-4,4);  ctx.lineTo(-10,10-w);
+  ctx.moveTo(4,4);   ctx.lineTo(10,10+w);
+  ctx.moveTo(10,2);  ctx.lineTo(18,8-w);
+  ctx.stroke();
+  // corpo
+  ctx.fillStyle = '#e8402a';
+  ctx.beginPath(); ctx.ellipse(0,0,16,10,0,0,Math.PI*2); ctx.fill();
+  // chele
+  ctx.fillStyle = '#c62815';
+  ctx.beginPath(); ctx.arc(-19,-6+w*0.5,5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(19,-6-w*0.5,5,0,Math.PI*2); ctx.fill();
+  // occhi su steli
+  ctx.strokeStyle = '#c62815'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-5,-8); ctx.lineTo(-6,-15); ctx.moveTo(5,-8); ctx.lineTo(6,-15); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-6,-16,3,0,Math.PI*2); ctx.arc(6,-16,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.fillRect(-7,-17,2,2); ctx.fillRect(5,-17,2,2);
+  ctx.restore();
+}
+
+function drawThrower(){
+  const x = thrower.x, y = thrower.y;
+  // leggero respiro quando è fermo, per non sembrare statico
+  const idle = Math.sin(performance.now()/450) * (state==='play' ? 0.6 : 1.4);
+  ctx.save(); ctx.translate(x, y + idle);
+  // legs
+  ctx.fillStyle = '#22337a'; ctx.fillRect(-10,-30,9,30); ctx.fillRect(4,-30,9,30);
+  // body (red jersey like Windjammers)
+  ctx.fillStyle = '#d1342c'; ctx.fillRect(-13,-62,28,34);
+  // head
+  ctx.fillStyle = '#f0c08a'; ctx.fillRect(-9,-80,18,18);
+  // occhi + sorriso
+  ctx.fillStyle = '#2a2a2a'; ctx.fillRect(-5,-73,3,3); ctx.fillRect(3,-73,3,3);
+  ctx.strokeStyle = '#a87850'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(-1,-68,4,0.15*Math.PI,0.85*Math.PI); ctx.stroke();
+  // bandana
+  ctx.fillStyle = '#ffd23f'; ctx.fillRect(-10,-82,20,7);
+  if (throwAnim > 0){
+    // braccio che scatta in avanti nell'istante del lancio
+    const p = 1 - throwAnim/16;
+    const swing = Math.sin(p*Math.PI);
+    ctx.save();
+    ctx.translate(10,-64);
+    ctx.rotate(-0.9 + swing*1.3);
+    ctx.fillStyle = '#f0c08a'; ctx.fillRect(0,-3,20,7);
+    ctx.restore();
+  } else if (discs.length===0 && pendingThrows===0 && state==='play'){
+    // braccio pronto, col prossimo frisbee in mano
+    ctx.fillStyle = '#f0c08a'; ctx.fillRect(12,-70,18,7);
+    ctx.fillStyle = '#ff5a5a';
+    ctx.beginPath(); ctx.ellipse(34,-67,12,4,0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDisc(d){
+  const boom = d.boomerang;
+  const main = d.gold ? '#ffc400' : (boom ? '#8a6bff' : '#ff5a5a');
+  const top  = d.gold ? '#fff2b0' : (boom ? '#d8ccff' : '#ffd0d0');
+  // trail (stessa forma per tutti i frisbee, cambia solo il colore)
+  d.trail.forEach((t,i) => {
+    ctx.globalAlpha = i/d.trail.length * (d.gold || boom ? 0.5 : 0.35);
+    ctx.fillStyle = main;
+    ctx.beginPath(); ctx.ellipse(t.x, t.y, 12, 4, 0, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(Math.sin(d.rot)*0.3);
+  // alone luminoso pulsante per quello dorato
+  if (d.gold){
+    ctx.fillStyle = 'rgba(255,215,80,' + (0.25 + Math.sin(d.rot*2)*0.12) + ')';
+    ctx.beginPath(); ctx.ellipse(0,0,24,10,0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.fillStyle = main;
+  ctx.beginPath(); ctx.ellipse(0,0,15,5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = top;
+  ctx.beginPath(); ctx.ellipse(0,-1.5,9,2.5,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDog(){
+  const x = dog.x, y = dog.y;
+  const dc = selectedDog().colors;
+  ctx.save(); ctx.translate(x, y);
+  // stordito: lampeggia e vede le stelline
+  if (dog.stun > 0){
+    if (Math.floor(dog.stun/4) % 2 === 0) ctx.globalAlpha = 0.45;
+    ctx.fillStyle = '#ffd23f';
+    ctx.font = 'bold 16px "Courier New"'; ctx.textAlign = 'center';
+    const a = dog.stun * 0.25;
+    ctx.fillText('★', Math.cos(a)*22, -66 + Math.sin(a)*6);
+    ctx.fillText('★', Math.cos(a+2.1)*22, -66 + Math.sin(a+2.1)*6);
+    ctx.fillText('★', Math.cos(a+4.2)*22, -66 + Math.sin(a+4.2)*6);
+  }
+  // shadow: resta sempre incollata al terreno (non sale con lui quando salta), si rimpicciolisce con l'altezza
+  ctx.fillStyle = 'rgba(0,0,0,.2)';
+  const sh = Math.max(0.3, 1 - (GROUND-y)/300);
+  ctx.beginPath(); ctx.ellipse(0, GROUND-y+6, 30*sh, 6*sh, 0, 0, Math.PI*2); ctx.fill();
+  if (!dog.onGround) ctx.rotate(Math.sin(dog.jumpSpin)*0.35 * dog.dir);
+  ctx.scale(dog.dir, 1);
+  const moving = Math.abs(dog.vx) > 0.1;
+  const run = Math.sin(dog.anim*6)*6;
+  // piccolo dondolio quando è fermo, così non sembra congelato
+  const idleBob = (!moving && dog.onGround && dog.stun<=0) ? Math.sin(performance.now()/380)*1.1 : 0;
+  ctx.translate(0, idleBob);
+  // coda: scodinzola più vivace da fermo, segue la falcata quando corre
+  const tailWag = moving ? run*0.5 : Math.sin(performance.now()/220)*6;
+  ctx.strokeStyle = dc.dark; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(-24,-26);
+  ctx.quadraticCurveTo(-36,-38-tailWag*0.5, -40,-30-tailWag); ctx.stroke();
+  // body
+  ctx.fillStyle = dc.body;
+  ctx.fillRect(-24,-38,48,22);
+  // collarino con medaglietta
+  ctx.fillStyle = dc.collar; ctx.fillRect(9,-40,6,24);
+  ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(12,-13,3,0,Math.PI*2); ctx.fill();
+  // legs
+  ctx.fillStyle = dc.dark;
+  const lo = dog.onGround ? run : 4;
+  ctx.fillRect(-20,-18,7,18+lo*0.4);
+  ctx.fillRect(-8,-18,7,18-lo*0.4);
+  ctx.fillRect(6,-18,7,18+lo*0.4);
+  ctx.fillRect(16,-18,7,18-lo*0.4);
+  // head
+  ctx.fillStyle = dc.body; ctx.fillRect(14,-52,24,20);
+  // snout
+  ctx.fillStyle = dc.dark; ctx.fillRect(34,-46,12,10);
+  ctx.fillStyle = '#222'; ctx.fillRect(42,-46,5,5); // nose
+  // boccuccia con linguetta, aperta quando corre o è in aria (felice/ansimante)
+  if (moving || !dog.onGround){
+    ctx.fillStyle = '#7a3030'; ctx.fillRect(36,-40,7,6);
+    ctx.fillStyle = '#ff8fa3'; ctx.fillRect(37,-38,5,5);
+  }
+  // ear (sventola con la corsa, altrimenti si muove piano)
+  const earFlop = moving ? run*0.4 : Math.sin(performance.now()/300)*1.5;
+  ctx.save();
+  ctx.translate(16,-60);
+  ctx.rotate(earFlop*0.05);
+  ctx.fillStyle = dc.dark; ctx.fillRect(0,0,9,12);
+  ctx.restore();
+  // eye, con un rapido battito di ciglia ogni tanto
+  const blinking = (performance.now() % 2600) < 110;
+  ctx.fillStyle = '#222';
+  if (blinking) ctx.fillRect(27,-47,6,1.6);
+  else ctx.fillRect(28,-48,4,4);
+  ctx.restore();
+}
+
+// ---------- LOOP ----------
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+fetchBoard();
+loop();
+</script>
+</body>
+</html>
