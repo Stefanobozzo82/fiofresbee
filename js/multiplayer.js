@@ -222,6 +222,7 @@ function mpApplyStart(payload){
   MP.rematchMine = false; MP.rematchPeer = false; MP.peerGone = false;
   clearTimeout(MP.rematchWatchdog); MP.rematchWatchdog = null;
   MP.popups = [];
+  clearSimTimers();
   // se stiamo arrivando qui da una rivincita, il pannello del risultato precedente è ancora aperto
   mpResultBoxEl.style.display = 'none'; mpResultOpen = false;
   // riusiamo esattamente lo stesso stato di gabbiano/granchio/osso/turbo del singolo giocatore
@@ -382,9 +383,9 @@ function mpHostSpawnDisc(){
   if (Math.random() < 0.22){
     setMessage('DOPPIO!', 55);
     MP.pendingEvt = { text:'DOPPIO!', dur:55 };
-    setTimeout(() => {
+    later(27, () => {   // ~0.45s, contati in passi di gioco
       if (state === 'mp' && MP.isHost && !MP.ended) mpHostSpawnDisc();
-    }, 450);
+    });
   }
 }
 
@@ -821,6 +822,7 @@ function mpUpdate(){
 
   if (MP.ended) return;
   if (MP.startAt > now) return;   // conto alla rovescia sincronizzato: nessuno si muove ancora
+  tickSimTimers();
 
   mpStepMyDog();
   mpLerpPeerDog();

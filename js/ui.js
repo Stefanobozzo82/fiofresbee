@@ -159,6 +159,20 @@ function checkOrient(){
 }
 addEventListener('resize', checkOrient);
 try { matchMedia('(orientation:portrait)').addEventListener('change', checkOrient); } catch(e){}
+
+// app in background (cambio app, telefono bloccato, chiamata in arrivo): mettiamo in pausa la
+// partita e zittiamo tutto l'audio. Al ritorno la partita resta in pausa (si riprende con ▶ o P),
+// così non si perde una vita nel secondo in cui si torna a guardare lo schermo
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){
+    if (state === 'play' && !paused){ paused = true; autoPaused = false; }
+    if (AC && AC.state === 'running') AC.suspend().catch(()=>{});
+    stopAmbient();
+  } else {
+    // l'audio riparte solo se era già stato attivato da un tocco (i browser lo richiedono)
+    if (AC){ if (AC.state === 'suspended') AC.resume().catch(()=>{}); startAmbient(); }
+  }
+});
 document.getElementById('trBtn').addEventListener('click', e => {
   e.stopPropagation();
   audio(); startAmbient(); uiClick();
@@ -463,6 +477,7 @@ function quitToMenu(){
   paused = false;
   state = 'title';
   transitionAlpha = 1;
+  clearSimTimers();
   stopMusic();
 }
 const quitBtn = document.getElementById('quitBtn');

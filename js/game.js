@@ -31,7 +31,8 @@ function startGameReal(){
   audio(); startAmbient(); SFX.round(); startMusic();
   ensureDaily();
   if (!SET.training) bumpPlayStreak();
-  setTimeout(launchDisc, 900*d.spawnMul);
+  clearSimTimers();
+  later(Math.round(54*d.spawnMul), launchDisc);   // ~0.9s
 }
 
 // fine partita: aggiorna il record e apre la classifica/il nome se il punteggio ci entra
@@ -111,10 +112,10 @@ function launchDisc(){
   if (round >= 6 && Math.random() < 0.25){
     pendingThrows++;
     setMessage('DOPPIO!', 55);
-    setTimeout(() => {
+    later(27, () => {   // ~0.45s
       pendingThrows--;
       if (state==='play') spawnDisc();
-    }, 450);
+    });
   }
 }
 
@@ -255,6 +256,7 @@ function update(){
   }
 
   if (state !== 'play') return;
+  tickSimTimers();
 
   // dog movement
   if (turbo > 0) turbo--;
@@ -557,7 +559,7 @@ function update(){
   discs = discs.filter(d => !d.dead);
   // quando non c'è più niente in volo (e niente in arrivo), nuovo lancio
   if (state === 'play' && hadDiscs && discs.length === 0 && pendingThrows === 0){
-    setTimeout(launchDisc, 850*DIFF[difficulty].spawnMul);
+    later(Math.round(51*DIFF[difficulty].spawnMul), launchDisc);   // ~0.85s
   }
 
   // controllo di sicurezza: copre anche le sfide del giorno che dipendono da eventi non legati

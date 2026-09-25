@@ -50,6 +50,18 @@ let throwAnim = 0;   // qualche frame di animazione del braccio quando il lancia
 // ---- effetti camera (scossa sul record e sui colpi) ----
 let camShake = 0, camShakeMag = 0;
 function triggerShake(mag, dur){ camShake = dur; camShakeMag = mag; }
+// ---- timer "di gioco": contano i passi di logica (1/60 s), non il tempo reale come setTimeout.
+// Così si fermano con la pausa e con l'app in background, e vengono azzerati a ogni nuova
+// partita: un lancio programmato in una partita non può più "sbucare" in quella successiva ----
+let simTimers = [];
+function later(frames, fn){ simTimers.push({ t: frames, fn }); }
+function clearSimTimers(){ simTimers = []; }
+function tickSimTimers(){
+  if (!simTimers.length) return;
+  const due = [];
+  simTimers = simTimers.filter(tm => { tm.t--; if (tm.t <= 0){ due.push(tm); return false; } return true; });
+  due.forEach(tm => tm.fn());
+}
 // ---- dissolvenza tra le schermate (menu / gioco / game over) ----
 let transitionAlpha = 1;
 

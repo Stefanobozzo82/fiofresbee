@@ -92,7 +92,7 @@ const MELODY = [523,0,659,784, 659,0,523,392, 440,0,523,659, 587,659,784,0];
 const BASS   = [131,0,131,0, 165,0,165,0, 110,0,110,0, 147,0,196,0];
 let mStep = 0;
 function musicTick(){
-  if (!musicOn || state!=='play') return;
+  if (!musicOn || state!=='play' || paused) return;
   const m = MELODY[mStep%16], b = BASS[mStep%16];
   if (m) beep(m, 0.16, 'triangle', 0.05, 0, 0, 'music');
   if (b) beep(b, 0.20, 'sine', 0.06, 0, 0, 'music');
