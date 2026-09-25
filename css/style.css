@@ -262,6 +262,9 @@ body.fs #game, #wrap:fullscreen #game, #wrap:-webkit-full-screen #game {
 .dailyCard .dr { color:#9aa3c0; font-size:11px; margin-top:4px; }
 .dailyCard.done { border-color:#3ddc84; background:rgba(61,220,132,.1); }
 .dailyCard.done .dd2 { color:#3ddc84; }
+.missionCard { border-color:#ffd23f; background:rgba(255,210,63,.07); }
+.missionCard .dt { color:#ffd23f; }
+.missionCard .dd2 { font-size:12px; line-height:1.6; }
 .trSub { color:#7ec8e3; font-size:13px; text-align:center; margin:4px 0 10px; }
 .achRow {
   display:flex; align-items:center; gap:10px; padding:8px 4px;
@@ -430,3 +433,13 @@ button.ok.cancel { background:transparent; border:2px solid #ff5a5a; color:#ff5a
   font-family:inherit; font-size:14px; letter-spacing:1px; padding:9px 20px; border-radius:20px;
   border:2px solid #ff5a5a; background:rgba(26,26,51,.88); color:#ff5a5a; cursor:pointer;
 }
+
+/* ---- trasferimento progressi (pannello impostazioni) ---- */
+.panel p.saveHint { font-size:11px; color:#9aa3c0; text-align:center; margin-bottom:8px; }
+.saveRow { display:flex; gap:10px; align-items:center; justify-content:center; margin:8px 0; }
+#saveCode { font-size:20px; font-weight:bold; letter-spacing:3px; color:#3ddc84; user-select:all; -webkit-user-select:all; }
+#saveInput {
+  width:130px; padding:6px; font-family:inherit; font-size:15px; text-align:center; letter-spacing:2px;
+  text-transform:uppercase; background:#0d0d1a; color:#fff; border:2px solid #7ec8e3; border-radius:6px; outline:none;
+}
+.panel p#saveStatus { font-size:12px; color:#7ec8e3; text-align:center; min-height:16px; }

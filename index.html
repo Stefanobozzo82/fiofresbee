@@ -47,12 +47,25 @@
     <div class="row"><label>🔊 Effetti</label><input type="range" id="volSfx" min="0" max="100" value="80"></div>
     <div class="row"><label>📳 Vibrazione</label><input type="checkbox" id="vibToggle" checked></div>
     <div class="row"><label>🏋️ Allenamento (senza game over)</label><input type="checkbox" id="trainToggle"></div>
+    <div class="row"><label>👣 Mostra dove atterra il frisbee</label><input type="checkbox" id="hintToggle"></div>
+    <div class="row"><label>⚡ Grafica leggera (più fluida)</label><input type="checkbox" id="lightToggle"></div>
     <div class="t2">🎯 DIFFICOLTÀ</div>
     <div class="chipRow" id="diffBtnRow">
       <button class="diffBtn" data-d="easy">FACILE</button>
       <button class="diffBtn" data-d="normal">NORMALE</button>
       <button class="diffBtn" data-d="hard">DIFFICILE</button>
     </div>
+    <div class="t2">💾 TRASFERISCI I PROGRESSI</div>
+    <p class="saveHint">Crea un codice qui e inseriscilo sull'altro telefono: ritrovi ossa, cani, potenziamenti, trofei e livello.</p>
+    <div class="saveRow">
+      <button class="diffBtn" id="saveMake">CREA CODICE</button>
+      <span id="saveCode"></span>
+    </div>
+    <div class="saveRow">
+      <input id="saveInput" maxlength="9" placeholder="CODICE" autocomplete="off">
+      <button class="diffBtn" id="saveLoad">CARICA</button>
+    </div>
+    <p id="saveStatus"></p>
     <button class="ok" id="settingsOk">CHIUDI</button>
   </div>
   <div class="panel" id="upgradeBox">
@@ -69,6 +82,7 @@
     </div>
     <div id="trAchPane">
       <div class="dailyCard" id="dailyCard"></div>
+      <div class="dailyCard missionCard" id="missionCard"></div>
       <div class="trSub" id="trSub"></div>
       <div id="achList"></div>
     </div>
@@ -103,7 +117,10 @@
     <div class="t">⚔ SFIDA ONLINE</div>
     <div class="mpSpinner" id="mpSpinner">🥏</div>
     <p id="mpSearchText">Cerco un avversario connesso in questo momento…</p>
-    <button class="ok cancel" id="mpCancel">ANNULLA</button>
+    <div class="playRow">
+      <button class="ok mp" id="mpBot">🤖 SFIDA IL COMPUTER</button>
+      <button class="ok cancel" id="mpCancel">ANNULLA</button>
+    </div>
   </div>
   <div class="panel" id="mpResultBox">
     <div class="t" id="mpResultTitle">RISULTATO</div>
@@ -132,7 +149,7 @@
 </div>
 <div id="help">
   <b>← →</b> muovi il cane · <b>SPAZIO / ↑</b> salto acrobatico · prendi il frisbee al volo!<br>
-  Prese consecutive = <b>COMBO</b> fino a x5 · frisbee <b>DORATO</b> = 500 punti · frisbee <b>🪃 BOOMERANG</b> torna indietro!<br>
+  Prese consecutive = <b>COMBO</b> fino a x5 · frisbee <b>DORATO</b> = 500 punti · frisbee <b>🪃 BOOMERANG</b> torna indietro! · la <b>CIABATTA</b> blu non va presa!<br>
   <b>OSSO</b> = turbo + doppio salto · ogni <b>2000 punti</b> recuperi un MISS · <b>INVIO</b> inizia · <b>P</b> pausa · <b>M</b> musica<br>
   <b>1 2 3</b> difficoltà · <b>S</b> condividi punteggio · <b>⚙</b> impostazioni · <b>⛶</b> schermo intero
 </div>
@@ -141,13 +158,16 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/config.js"></script>
 <script src="js/core.js"></script>
+<script src="js/missions.js"></script>
 <script src="js/leaderboard.js"></script>
+<script src="js/save.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/game.js"></script>
 <script src="js/render.js"></script>
 <script src="js/multiplayer.js"></script>
+<script src="js/bot.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

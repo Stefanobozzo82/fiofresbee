@@ -18,13 +18,16 @@ const CORE = [
   'css/style.css',
   'js/config.js',
   'js/core.js',
+  'js/missions.js',
   'js/leaderboard.js',
+  'js/save.js',
   'js/pwa.js',
   'js/audio.js',
   'js/ui.js',
   'js/game.js',
   'js/render.js',
   'js/multiplayer.js',
+  'js/bot.js',
   'js/main.js'
 ];
 const CDN = 'https://cdn.jsdelivr.net/';

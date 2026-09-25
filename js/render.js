@@ -177,6 +177,7 @@ function draw(){
   for (let i=0;i<25;i++) ctx.fillRect((i*97)%W, GROUND+15+(i*37)%(H-GROUND-20), 8, 3);
 
   drawThrower();
+  if (state === 'play' && landHintOn()) discs.forEach(drawLandingHint);
   if (bone) drawBone();
   if (crab) drawCrab();
   discs.forEach(drawDisc);
@@ -385,24 +386,33 @@ function drawBoat(b){
   ctx.restore();
 }
 
+// sotto al titolo e al game over si alternano, ogni 5 secondi, la classifica di sempre e quella
+// della settimana (che riparte da zero ogni lunedì); con tre puntini che dicono quale si sta vedendo
 function drawBoard(cx, top){
+  const showWeek = boardWeek !== null && Math.floor(performance.now() / 5000) % 2 === 1;
+  const list = showWeek ? boardWeek : board;
   ctx.textAlign = 'center';
   ctx.font = 'bold 22px "Courier New"';
-  ctx.fillStyle = '#ffd23f';
-  ctx.fillText(ONLINE ? '— CLASSIFICA ONLINE —' : '— CLASSIFICA —', cx, top);
+  ctx.fillStyle = showWeek ? '#7eff9e' : '#ffd23f';
+  const where = ONLINE ? ' ONLINE' : '';
+  ctx.fillText(showWeek ? `— TOP DELLA SETTIMANA${where} —` : `— CLASSIFICA${where} DI SEMPRE —`, cx, top);
+  if (boardWeek !== null){
+    ctx.fillStyle = showWeek ? '#555a77' : '#ffd23f'; ctx.fillRect(cx-12, top+6, 8, 4);
+    ctx.fillStyle = showWeek ? '#7eff9e' : '#555a77'; ctx.fillRect(cx+4, top+6, 8, 4);
+  }
   ctx.font = 'bold 18px "Courier New"';
-  if (boardLoading && !board.length){
+  if (boardLoading && !list.length){
     ctx.fillStyle = '#7ec8e3';
     ctx.fillText('Caricamento...', cx, top+30);
     return;
   }
-  if (!board.length){
+  if (!list.length){
     ctx.fillStyle = '#7ec8e3';
-    ctx.fillText('Nessun record... ancora!', cx, top+30);
+    ctx.fillText(showWeek ? 'Nessun punteggio questa settimana: il 1° posto è libero!' : 'Nessun record... ancora!', cx, top+30);
     return;
   }
-  board.forEach((e,i) => {
-    ctx.fillStyle = i===0 ? '#ffd23f' : '#fff';
+  list.forEach((e,i) => {
+    ctx.fillStyle = i===0 ? (showWeek ? '#7eff9e' : '#ffd23f') : '#fff';
     const y = top+30+i*24;
     ctx.textAlign = 'left';
     ctx.fillText(`${i+1}. ${e.name}`, cx-150, y);
@@ -554,7 +564,18 @@ function drawThrower(){
   ctx.restore();
 }
 
+// ombra sulla sabbia nel punto in cui il frisbee arriverà all'altezza della bocca di Fio
+// (rossa per la ciabatta: lì NON bisogna stare)
+function drawLandingHint(d){
+  const x = predictCatchX(d);
+  if (x === null) return;
+  const pulse = 1 + Math.sin(performance.now() / 160) * 0.12;
+  ctx.fillStyle = d.trap ? 'rgba(255,70,70,.35)' : (d.gold ? 'rgba(255,196,0,.4)' : 'rgba(40,30,10,.28)');
+  ctx.beginPath(); ctx.ellipse(x, GROUND + 6, 22 * pulse, 6 * pulse, 0, 0, Math.PI*2); ctx.fill();
+}
+
 function drawDisc(d){
+  if (d.trap){ drawSandal(d); return; }
   const boom = d.boomerang;
   const main = d.gold ? '#ffc400' : (boom ? '#8a6bff' : '#ff5a5a');
   const top  = d.gold ? '#fff2b0' : (boom ? '#d8ccff' : '#ffd0d0');
@@ -575,6 +596,26 @@ function drawDisc(d){
   ctx.beginPath(); ctx.ellipse(0,0,15,5,0,0,Math.PI*2); ctx.fill();
   ctx.fillStyle = top;
   ctx.beginPath(); ctx.ellipse(0,-1.5,9,2.5,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// la ciabatta infradito blu che il lanciatore tira per sbaglio: si capovolge in volo
+function drawSandal(d){
+  d.trail.forEach((t,i) => {
+    ctx.globalAlpha = i/d.trail.length * 0.25;
+    ctx.fillStyle = '#3fa7ff';
+    ctx.beginPath(); ctx.ellipse(t.x, t.y, 9, 4, 0, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.rot * 0.6);
+  // suola
+  ctx.fillStyle = '#2f7fd6';
+  ctx.beginPath(); ctx.ellipse(0, 0, 16, 7, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#9fd0ff';
+  ctx.beginPath(); ctx.ellipse(0, -1.5, 13, 4.5, 0, 0, Math.PI*2); ctx.fill();
+  // laccetto a V
+  ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-6, -4); ctx.lineTo(6, -1); ctx.lineTo(-6, 3); ctx.stroke();
   ctx.restore();
 }
 

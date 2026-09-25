@@ -42,7 +42,8 @@ const MP = {
   pendingPeerStun: false, pendingPeerTurbo: false, pendingEvt: null,
   ended: false, resultShown: false,
   rematchMine: false, rematchPeer: false, peerGone: false, rematchWatchdog: null,
-  popups: []
+  popups: [],
+  isBot: false             // true = sfida contro il computer (vedi bot.js), nessuna rete
 };
 
 function mpFreshDog(){
@@ -57,10 +58,12 @@ function mpStartSearch(){
   closeDogSelect();
   const client = mpGetClient();
   if (!client){
-    showTrophyMsg('⚠ Sfida online non disponibile al momento', 140);
-    openDogSelect();
+    // niente connessione (o Supabase irraggiungibile): si gioca subito contro il computer
+    showTrophyMsg('📡 Niente connessione: sfidi il computer!', 150);
+    mpStartBotMatch();
     return;
   }
+  MP.isBot = false;
   MP.myId = mpUid();
   MP.myName = ((localStorage.getItem('dd_name')||'').trim() || 'CANE SENZA NOME').slice(0,14);
   MP.searching = true; MP.matchId = null; MP.isHost = false; MP.peerId = null;
@@ -84,8 +87,9 @@ function mpSearchFail(){
   if (!MP.searching) return;
   mpCleanupLobby();
   MP.searching = false;
-  mpSearchText.textContent = 'Nessun avversario trovato, riprova tra poco…';
-  setTimeout(() => { if (!MP.started) mpCloseSearch(); }, 1600);
+  // invece di rimandare al menù, si gioca subito contro il computer
+  mpSearchText.textContent = 'Nessuno online in questo momento: sfidi il computer!';
+  setTimeout(() => { if (!MP.started && mpSearchOpen) mpStartBotMatch(); }, 1600);
 }
 
 function mpCleanupLobby(){
@@ -260,6 +264,7 @@ function mpOpponentLeft(){
 }
 
 function mpQuit(){
+  MP.isBot = false;
   mpTeardownChannels();
   MP.started = false; MP.ended = true; MP.resultShown = false;
   MP.rematchMine = false; MP.rematchPeer = false; MP.peerGone = false;
@@ -479,6 +484,7 @@ function mpHostHazards(){
           puff(bone.x, bone.y, '#ffd23f', 16);
         } else {
           MP.pendingPeerTurbo = true;
+          if (MP.isBot) botGotTurbo();
         }
         bone = null; boneTimer = 800 + Math.random()*900;
       }
@@ -488,7 +494,10 @@ function mpHostHazards(){
 }
 
 function mpHostSendWorld(){
-  if (!MP.matchCh) return;
+  if (!MP.matchCh){   // contro il computer: nessuno a cui mandarlo, ma gli eventi vanno comunque consumati
+    MP.pendingPeerStun = false; MP.pendingPeerTurbo = false; MP.pendingEvt = null;
+    return;
+  }
   MP.matchCh.send({ type:'broadcast', event:'world', payload: {
     discs: MP.discs.map(d => ({ id:d.id, x:d.x, y:d.y, gold:d.gold, boomerang:d.boomerang||false, dead:d.dead||null })),
     gull, crab, bone,
@@ -562,6 +571,15 @@ function mpHostStep(now){
       const mouthX = MP.myDog.x + MP.myDog.dir*22, mouthY = MP.myDog.y - 26;
       if (Math.hypot(d.x-mouthX, d.y-mouthY) < 34){
         mpHostAwardPoint('host', !MP.myDog.onGround, d);
+        d.dead = 'caught';
+        changed = true;
+      }
+    }
+    // contro il computer la presa del bot la giudichiamo qui (a parità di tempismo vince il giocatore)
+    if (!d.dead && MP.isBot && MP.peerDog){
+      const mouthX = MP.peerDog.x + MP.peerDog.dir*22, mouthY = MP.peerDog.y - 26;
+      if (Math.hypot(d.x-mouthX, d.y-mouthY) < 34){
+        mpHostAwardPoint('guest', !MP.peerDog.onGround, d);
         d.dead = 'caught';
         changed = true;
       }
@@ -735,6 +753,7 @@ function mpShowResult(mine, theirs, reason){
 }
 document.getElementById('mpResultOk').addEventListener('click', e => {
   e.stopPropagation(); uiClick();
+  MP.isBot = false;
   mpTeardownChannels();   // usciamo davvero: qui sì che il canale della partita va chiuso
   MP.resultShown = false;   // fondamentale: senza questo, la PROSSIMA sfida (un nuovo abbinamento
   // casuale) resta bloccata sul caricamento, perché mpHostMaybeStart si rifiuta di far partire
@@ -750,6 +769,7 @@ document.getElementById('mpResultOk').addEventListener('click', e => {
 // mpShowResult): quando ENTRAMBI hanno segnalato, l'host (che resta lo stesso della partita
 // appena finita) manda un nuovo "start", esattamente come al primo abbinamento.
 function mpRequestRematch(){
+  if (MP.isBot){ mpStartBotMatch(); return; }   // il computer accetta sempre la rivincita
   if (!MP.matchCh || MP.peerGone || MP.rematchMine) return;
   MP.rematchMine = true;
   mpRematchBtnEl.disabled = true;
@@ -825,7 +845,7 @@ function mpUpdate(){
   tickSimTimers();
 
   mpStepMyDog();
-  mpLerpPeerDog();
+  if (MP.isBot) botStep(); else mpLerpPeerDog();
   // scia turbo cosmetica sul cane avversario, se sta usando l'osso in questo momento
   if (MP.peerTarget && MP.peerTarget.turbo && MP.peerDog && Math.random() < 0.5){
     particles.push({ x: MP.peerDog.x - MP.peerDog.dir*26, y: MP.peerDog.y - 8 - Math.random()*14,

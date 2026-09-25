@@ -85,6 +85,8 @@ const SFX = {
   pop(){ noiseBurst(0.2, 0.06); beep(700+Math.random()*500, 0.08, 'triangle', 0.05, -200); },
   golden(){ [523,659,784,1046,1318,1568].forEach((f,i)=>beep(f, 0.14, 'square', 0.14, 0, i*0.07)); beep(2093, 0.4, 'triangle', 0.10, 0, 0.45); },
   over(){ [392,330,262,196].forEach((f,i)=>beep(f, 0.25, 'square', 0.13, 0, i*0.18)); },
+  trapSpawn(){ beep(210, 0.10, 'square', 0.09, -50); beep(170, 0.14, 'square', 0.09, -50, 0.11); },
+  dodge(){ beep(520, 0.07, 'triangle', 0.11); beep(780, 0.1, 'triangle', 0.11, 0, 0.07); },
   thunder(){ noiseBurst(0.7, 0.15); beep(75, 0.6, 'sawtooth', 0.10, -35, 0.06); }
 };
 // musichetta loop (marimba-ish da spiaggia)

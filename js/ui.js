@@ -184,6 +184,8 @@ const volMusic = document.getElementById('volMusic');
 const volSfx = document.getElementById('volSfx');
 const vibToggle = document.getElementById('vibToggle');
 const trainToggle = document.getElementById('trainToggle');
+const hintToggle = document.getElementById('hintToggle');
+const lightToggle = document.getElementById('lightToggle');
 const diffBtnRow = document.getElementById('diffBtnRow');
 
 function syncDiffButtons(){
@@ -202,6 +204,9 @@ function openSettings(){
   closeDogSelect();
   volMusic.value = SET.musicVol; volSfx.value = SET.sfxVol; vibToggle.checked = SET.vibration;
   trainToggle.checked = SET.training;
+  hintToggle.checked = landHintOn();
+  lightToggle.checked = !!SET.lightGfx;
+  resetSavePanel();
   syncDiffButtons();
   settingsBox.style.display = 'block';
   settingsOpen = true;
@@ -218,6 +223,9 @@ volSfx.addEventListener('input', () => { SET.sfxVol = +volSfx.value; saveSetting
 volSfx.addEventListener('change', () => beep(660,0.08,'square',0.15));
 vibToggle.addEventListener('change', () => { SET.vibration = vibToggle.checked; saveSettings(); if (SET.vibration) buzz(); });
 trainToggle.addEventListener('change', () => { SET.training = trainToggle.checked; saveSettings(); beep(500,0.06,'square',0.12); });
+// una volta toccate a mano, queste due scelte restano quelle del giocatore (niente più automatismi)
+hintToggle.addEventListener('change', () => { SET.landHint = hintToggle.checked; saveSettings(); beep(500,0.06,'square',0.12); });
+lightToggle.addEventListener('change', () => { SET.lightGfx = lightToggle.checked; saveSettings(); beep(500,0.06,'square',0.12); });
 
 // ---------- MENÙ INIZIALE "SCEGLI IL TUO CANE": scelta della razza (sbloccate salendo di livello),
 // con le barre delle abilità di ognuna — si apre da solo appena si torna al titolo, niente osso da premere ----------
@@ -360,6 +368,7 @@ document.getElementById('upgradeOk').addEventListener('click', () => { uiClick()
 // ---------- TROFEI & ASPETTO: pannello con due schede (trofei sbloccabili / cosmetici equipaggiabili) ----------
 const trophyBox = document.getElementById('trophyBox');
 const dailyCardEl = document.getElementById('dailyCard');
+const missionCardEl = document.getElementById('missionCard');
 const trSubEl = document.getElementById('trSub');
 const achListEl = document.getElementById('achList');
 const trTabAch = document.getElementById('trTabAch');
@@ -378,6 +387,7 @@ function renderTrophyPanel(){
     '<div class="dt">🎯 SFIDA DEL GIORNO' + (playStreak.count > 0 ? '  ·  🔥 ' + playStreak.count + ' giorni di fila' : '') + '</div>' +
     '<div class="dd2">' + (daily.done ? '✓ Completata! +' + ch.reward + ' 🦴' : ch.desc + ' <span style="color:#ffd23f">(+' + ch.reward + ' 🦴)</span>') + '</div>' +
     '<div class="dr">Cambia ogni giorno · gioca ogni giorno per far crescere la serie 🔥</div>';
+  missionCardEl.innerHTML = missionCardHtml();
   trSubEl.textContent = `${unlocked.length} su ${ACH.length} trofei sbloccati`;
   achListEl.innerHTML = '';
   ACH.forEach(a => {
@@ -457,8 +467,8 @@ let pendingAfterTutorial = null;
 function maybeShowTutorial(cb){
   if (localStorage.getItem('dd_tut_seen')){ cb && cb(); return; }
   tutText.innerHTML = isTouch
-    ? 'Tocca e trascina in un punto qualsiasi <b>a sinistra</b> per muovere Fio: il joystick compare lì dove tocchi, più lo spingi lontano dal centro più corre veloce. Tocca in un punto qualsiasi <b>a destra</b> per saltare: anche il pulsante compare lì dove tocchi.<br>Prendi i frisbee al volo! Quello <b>dorato</b> vale di più, quello <b>viola</b> torna indietro se non lo prendi.'
-    : '<b>← →</b> muovi Fio · <b>SPAZIO / ↑</b> salto acrobatico (doppio salto con l\'osso turbo!).<br>Prendi i frisbee al volo! Quello <b>dorato</b> vale di più, quello <b>viola</b> torna indietro se non lo prendi. <b>P</b> pausa.';
+    ? 'Tocca e trascina in un punto qualsiasi <b>a sinistra</b> per muovere Fio: il joystick compare lì dove tocchi, più lo spingi lontano dal centro più corre veloce. Tocca in un punto qualsiasi <b>a destra</b> per saltare: anche il pulsante compare lì dove tocchi.<br>Prendi i frisbee al volo! Quello <b>dorato</b> vale di più, quello <b>viola</b> torna indietro se non lo prendi. La <b>ciabatta blu</b> invece lasciala cadere!'
+    : '<b>← →</b> muovi Fio · <b>SPAZIO / ↑</b> salto acrobatico (doppio salto con l\'osso turbo!).<br>Prendi i frisbee al volo! Quello <b>dorato</b> vale di più, quello <b>viola</b> torna indietro se non lo prendi. La <b>ciabatta blu</b> invece lasciala cadere! <b>P</b> pausa.';
   tutOpen = true;
   tutBox.style.display = 'block';
   pendingAfterTutorial = cb;

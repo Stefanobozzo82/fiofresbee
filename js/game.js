@@ -24,7 +24,7 @@ function startGameReal(){
   gull=null; gullTimer=500*d.hazardMul; crab=null; crabTimer=700*d.hazardMul;
   bone=null; boneTimer=1000*d.hazardMul; turbo=0; turboMax=TURBO_TIME; airJumps=0; lastJumpHeld=false;
   newRecord=false; bestAtStart=best; fwTimer=0; overT=0;
-  paused=false; gameGold=0; gameAir=0; gameBones=0;
+  paused=false; gameGold=0; gameAir=0; gameBones=0; resetGameCounters();
   discs=[]; pendingThrows=0;
   camShake=0; transitionAlpha=1;
   setMessage('ROUND 1', 90);
@@ -88,6 +88,10 @@ function spawnDisc(){
     gold: Math.random() < (0.08 + dogLuckBonus()),        // raro: ~1 lancio su 12 (di più con la Fortuna)
     boomerang: Math.random() < 0.12, bt: 0                // ogni tanto torna indietro!
   };
+  // la CIABATTA: dal 3° round, ogni tanto il lanciatore tira per sbaglio una ciabatta invece del
+  // frisbee. Va lasciata cadere (piccolo bonus "SCHIVATA!"): se la prendi in bocca, Fio si ferma
+  // un attimo disgustato e la combo si azzera. Non costa mai una vita.
+  d.trap = !d.gold && !d.boomerang && round >= 3 && Math.random() < 0.12;
   if (d.boomerang){
     // volo dedicato: vola dritto fino quasi al bordo dello schermo, poi torna,
     // sempre in aria (niente rimbalzi che lo farebbero fermare a metà corsa)
@@ -97,11 +101,13 @@ function spawnDisc(){
     d.bT = apexDist * Math.PI / d.vx0;          // durata dell'andata, calcolata per arrivarci sempre
     d.vx = d.vx0;
   }
-  discs.push(d); thrown++;
+  discs.push(d);
+  if (!d.trap) thrown++;   // la ciabatta non conta nelle statistiche delle prese
   throwAnim = 16;
   SFX.throw_();
   if (d.gold) SFX.goldSpawn();
   if (d.boomerang) SFX.boomSpawn();
+  if (d.trap){ SFX.trapSpawn(); setMessage('OCCHIO: CIABATTA!', 50); }
 }
 function launchDisc(){
   if (state!=='play') return;
@@ -389,6 +395,7 @@ function update(){
       turboMax = Math.round(TURBO_TIME * dogTurboMul());
       turbo = turboMax;
       gameBones++; if (gameBones >= 3) award('bone3');
+      gc.bones++; if (bone.falling) gc.boneAir++;
       lifeStats.bones++; saveLifeStats(); checkLifeTiers();
       setMessage(bone.falling ? 'OSSO AL VOLO! TURBO!' : 'TURBO!', 60);
       SFX.turbo();
@@ -453,7 +460,18 @@ function update(){
 
     // catch check: dog mouth zone
     const mouthX = dog.x + dog.dir*22, mouthY = dog.y - 26;
-    if (Math.hypot(d.x-mouthX, d.y-mouthY) < 34){
+    if (d.trap && Math.hypot(d.x-mouthX, d.y-mouthY) < 30){
+      // ciabatta presa in bocca: niente punti, Fio si blocca un attimo e la combo si azzera
+      d.dead = 'trap';
+      streak = 0; gc.boomChain = 0; gc.trapCaught++;
+      dog.stun = Math.max(dog.stun, 45);
+      setMessage('BLEAH! CIABATTA!', 60);
+      SFX.ouch();
+      puff(d.x, d.y, '#3fa7ff', 14);
+      triggerShake(3, 10);
+      continue;
+    }
+    if (!d.trap && Math.hypot(d.x-mouthX, d.y-mouthY) < 34){
       const air = !dog.onGround;
       const spinBonus = Math.floor(dog.jumpSpin / (Math.PI*2));
       streak++;
@@ -499,6 +517,12 @@ function update(){
       if (air) lifeStats.air++;
       saveLifeStats(); checkLifeTiers();
       checkDaily({ gold:gameGold, mult, bones:gameBones, score, streak, air:gameAir, round, catches });
+      gc.catches++;
+      if (air) gc.air++;
+      if (d.gold){ gc.gold++; if (air) gc.goldAir++; }
+      if (d.boomerang){ gc.boom++; gc.boomChain++; }
+      if (turbo > 0) gc.turboCatches++;
+      checkMission(missionCounters());
       // record battuto in diretta!
       if (!newRecord && bestAtStart > 0 && score > bestAtStart){
         newRecord = true;
@@ -529,7 +553,7 @@ function update(){
     if (d.boomerang && d.bt >= d.bT && d.x <= d.x0){
       d.dead = 'miss';
       misses++;
-      streak = 0;
+      streak = 0; gc.boomChain = 0;
       setMessage('TORNATO AL LANCIATORE', 55);
       puff(d.x0, d.y0, '#8a6bff', 12);
       if (misses >= maxMiss){
@@ -542,8 +566,19 @@ function update(){
     }
 
     // miss: offscreen or stopped bouncing
+    if (d.trap && (d.x > W+40 || d.x < -40 || d.bounces >= 1)){
+      // ciabatta lasciata cadere: bravo! piccolo bonus, e la combo resta intatta
+      d.dead = 'dodged';
+      gc.trapDodged++;
+      score += 50;
+      setMessage('SCHIVATA! +50', 45);
+      SFX.dodge();
+      checkMission(missionCounters());
+      continue;
+    }
     if (d.x > W+40 || d.x < -40 || (d.bounces >= 2 && d.vy > -1 && d.y >= GROUND+7)){
       d.dead = 'miss';
+      gc.boomChain = 0;
       misses++;
       streak = 0;   // la combo si azzera
       setMessage('MISS!', 60);
@@ -567,7 +602,25 @@ function update(){
   // basta per la maggior parte dei casi, ma qui non si rischia di perdere il momento giusto
   if (state === 'play'){
     checkDaily({ gold:gameGold, mult:Math.min(streak,5), bones:gameBones, score, streak, air:gameAir, round, catches });
+    checkMission(missionCounters());
   }
+}
+
+// dove il frisbee passerà all'altezza della bocca di Fio (ricalcolato ogni frame, quindi segue
+// anche le deviazioni del gabbiano): stessa fisica di update(), simulata in avanti. null se esce
+// dallo schermo prima. Usato dall'ombra di aiuto (impostazione "Mostra dove atterra il frisbee")
+// e dal cane-bot della sfida contro il computer.
+function predictCatchX(d){
+  if (d.boomerang) return null;
+  let x = d.x, y = d.y, vx = d.vx, vy = d.vy;
+  const curve = d.curve || 0, catchY = GROUND - 26;
+  for (let i = 0; i < 300; i++){
+    vy += 0.32; vx += curve * 0.02; vx *= 0.999;
+    x += vx; y += vy;
+    if (x > W + 40 || x < -40) return null;
+    if (vy > 0 && y >= catchY) return x;
+  }
+  return null;
 }
 
 function puff(x,y,color,n){

@@ -1,10 +1,33 @@
 // Classifica online/locale e inserimento del nome
 // ---------- CLASSIFICA (online via Supabase, altrimenti locale) ----------
-let board = [];
+let board = [];          // classifica di sempre (top 5)
+let boardWeek = null;    // classifica della settimana (top 5); null = non disponibile (es. colonna mancante sul server)
 let boardLoading = false;
 let nameOpen = false;
 try { board = JSON.parse(localStorage.getItem('dd_board')||'[]'); } catch(e){ board=[]; }
 function saveLocalBoard(){ localStorage.setItem('dd_board', JSON.stringify(board.slice(0,5))); }
+
+// inizio della settimana corrente (lunedì alle 00:00, ora del dispositivo): la classifica settimanale
+// si azzera da sola ogni lunedì, così c'è sempre un primo posto alla portata di tutti
+function weekStart(){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+
+// senza Supabase: tutti i punteggi locali (con la data) servono a ricavare entrambe le classifiche
+let localScores = [];
+try { localScores = JSON.parse(localStorage.getItem('dd_board_local')||'[]'); } catch(e){ localScores = []; }
+function rebuildLocalBoards(){
+  const byScore = (a,b) => b.score - a.score;
+  const ws = weekStart().getTime();
+  // i vecchi record locali (salvati prima che esistesse la data) contano solo per "di sempre"
+  const all = localScores.concat(board.filter(e => !e.t && !localScores.some(x => x.name === e.name && x.score === e.score)));
+  board = all.slice().sort(byScore).slice(0,5).map(e => ({ name:e.name, score:e.score }));
+  boardWeek = localScores.filter(e => e.t >= ws).sort(byScore).slice(0,5);
+}
+if (!ONLINE) rebuildLocalBoards();
 
 async function fetchBoard(){
   if (!ONLINE) return;
@@ -13,14 +36,23 @@ async function fetchBoard(){
     const r = await fetch(SUPA_URL + '/rest/v1/scores?select=name,score&order=score.desc&limit=5', { headers: SUPA_HEADERS });
     if (r.ok) board = await r.json();
   } catch(e){}
+  try {
+    const since = encodeURIComponent(weekStart().toISOString());
+    const r = await fetch(SUPA_URL + '/rest/v1/scores?select=name,score&created_at=gte.' + since + '&order=score.desc&limit=5', { headers: SUPA_HEADERS });
+    boardWeek = r.ok ? await r.json() : null;
+  } catch(e){ boardWeek = null; }
   boardLoading = false;
 }
 
 async function submitScore(name, s){
   if (!ONLINE){
-    board.push({name, score:s});
-    board.sort((a,b)=>b.score-a.score);
-    board = board.slice(0,5);
+    localScores.push({ name, score:s, t:Date.now() });
+    localScores.sort((a,b)=>b.score-a.score);
+    // teniamo i migliori di sempre più tutti quelli di questa settimana, niente di più
+    const ws = weekStart().getTime();
+    localScores = localScores.filter((e,i) => i < 5 || e.t >= ws).slice(0,60);
+    localStorage.setItem('dd_board_local', JSON.stringify(localScores));
+    rebuildLocalBoards();
     saveLocalBoard();
     return;
   }
@@ -33,7 +65,9 @@ async function submitScore(name, s){
   await fetchBoard();
 }
 
-function qualifies(s){ return s>0 && (board.length<5 || s > board[board.length-1].score); }
+// il nome si chiede se il punteggio entra in almeno una delle due classifiche
+function entersTop5(list, s){ return list.length < 5 || s > list[list.length-1].score; }
+function qualifies(s){ return s>0 && (entersTop5(board, s) || (boardWeek !== null && entersTop5(boardWeek, s))); }
 
 const nameBox = document.getElementById('nameBox');
 const nameBoxTitle = document.getElementById('nameBoxTitle');

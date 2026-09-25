@@ -128,6 +128,12 @@ function showTrophyMsg(msg, dur){
 let SET = { musicVol:70, sfxVol:80, vibration:true, training:false };
 try { SET = Object.assign(SET, JSON.parse(localStorage.getItem('dd_settings')||'{}')); } catch(e){}
 function saveSettings(){ localStorage.setItem('dd_settings', JSON.stringify(SET)); }
+// ombra "dove atterra il frisbee": finché il giocatore non sceglie da sé nelle impostazioni, è accesa
+// in modalità facile e nelle prime 5 partite (aiuta a capire le traiettorie), poi si spegne da sola
+function landHintOn(){
+  if (SET.landHint !== undefined) return !!SET.landHint;
+  return difficulty === 'easy' || lifeStats.games < 5;
+}
 
 // ---- livello giocatore: cresce con l'esperienza (punteggio) accumulata in tutte le partite ----
 const RANKS = [
@@ -362,6 +368,14 @@ const DIFF = {
 let difficulty = localStorage.getItem('dd_diff') || 'normal';
 if (!DIFF[difficulty]) difficulty = 'normal';
 let gameGold = 0, gameAir = 0, gameBones = 0;
+// contatori della partita in corso usati dalle missioni (vedi missions.js)
+let gc = {};
+function resetGameCounters(){
+  gc = { catches:0, air:0, gold:0, goldAir:0, boom:0, boomChain:0, trapDodged:0, trapCaught:0,
+         bones:0, boneAir:0, turboCatches:0 };
+}
+resetGameCounters();
+function missionCounters(){ return Object.assign({}, gc, { score, round, mult: Math.min(streak, 5) }); }
 function award(id){
   if (unlocked.includes(id)) return;
   unlocked.push(id);
