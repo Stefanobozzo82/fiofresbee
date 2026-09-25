@@ -1,0 +1,432 @@
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overscroll-behavior:none; }
+body {
+  background:#0d0d1a;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; font-family:'Courier New', monospace; color:#fff;
+  user-select:none; -webkit-user-select:none; touch-action:manipulation;
+}
+h1 {
+  font-size:clamp(18px,4vw,32px); letter-spacing:4px; margin:10px 0 4px;
+  color:#ffd23f; text-shadow:3px 3px 0 #d14b1f, 6px 6px 0 rgba(0,0,0,.4);
+  text-transform:uppercase;
+}
+.sub { color:#7ec8e3; font-size:12px; letter-spacing:2px; margin-bottom:10px; }
+#wrap { position:relative; line-height:0; }
+/* selettore per id, non per tag "canvas": nel menù cani ci sono anche i mini-canvas dei ritratti,
+   che non devono ereditare bordo/sfondo/dimensioni pensati per il canvas di gioco */
+#game {
+  border:4px solid #2a2a4a; border-radius:8px;
+  box-shadow:0 0 40px rgba(255,210,63,.15);
+  image-rendering:pixelated;
+  background:#87ceeb;
+  max-width:96vw; max-height:70vh;
+}
+#help { margin-top:10px; font-size:12px; color:#aaa; letter-spacing:1px; text-align:center; line-height:1.7; }
+#help b { color:#ffd23f; }
+
+/* ---- pulsante schermo intero ---- */
+/* z-index:95 (sopra ai pannelli, che sono a 80): senza questo, col menù "scegli il tuo cane"
+   aperto (il caso normale sulla schermata del titolo, dato che si apre da solo) questi pulsanti
+   finiscono SOTTO al pannello e diventano semplicemente non cliccabili — capitava già su una
+   risoluzione comune come 960x540, dove il pannello copre per intero la fila di pulsanti */
+#fsBtn {
+  position:absolute; top:12px; right:12px; z-index:95;
+  width:44px; height:44px; border-radius:10px;
+  border:2px solid #ffd23f; background:rgba(26,26,51,.75);
+  color:#ffd23f; font-size:20px; cursor:pointer; line-height:1;
+}
+#fsBtn:hover { background:#1a1a33; }
+#trBtn {
+  position:absolute; top:12px; right:64px; z-index:95;
+  width:44px; height:44px; border-radius:10px;
+  border:2px solid #7ec8e3; background:rgba(26,26,51,.75);
+  font-size:19px; cursor:pointer; line-height:1;
+}
+#trBtn:hover { background:#1a1a33; }
+
+/* ---- controlli touch sovrapposti al canvas ---- */
+/* pulsanti più grandi e staccati dal bordo, per non litigare con i gesti "indietro" del telefono */
+/* bottom in vh (piccolo): in schermo intero #wrap riempie tutta la viewport, quindi i comandi
+   restano incollati al bordo inferiore, nella fascia di sabbia sotto i piedi del lanciatore */
+.pad { display:none; position:absolute; bottom:clamp(4px, 1.5vh, 16px); z-index:55; gap:20px; }
+/* #padL e #padR ora sono zone di tocco ampie (non bottoni fissi): il joystick e il pulsante
+   di salto compaiono entrambi dove appoggi il dito, ciascuno nella propria metà schermo */
+#padL { left:0; bottom:0; width:50%; height:30vh; touch-action:none; }
+#padR { right:0; bottom:0; width:50%; height:30vh; touch-action:none; }
+/* dimensione fissa a 84px per entrambi i comandi (richiesto esplicitamente):
+   su schermi molto bassi in orizzontale può risalire nella zona del lanciatore */
+.pad button {
+  width:84px; height:84px;
+  border-radius:50%; border:4px solid #ffd23f;
+  background:rgba(26,26,51,.22); color:#ffd23f; font-size:30px;
+  touch-action:none; -webkit-tap-highlight-color:transparent;
+  transition: transform .08s ease, background .08s ease, box-shadow .08s ease;
+}
+/* feedback visivo immediato al tocco: si "schiaccia" e si illumina */
+.pad button.pressed {
+  transform: scale(0.88);
+  background: rgba(255,210,63,.35);
+  box-shadow: 0 0 18px rgba(255,210,63,.6);
+}
+@media (pointer:coarse) { .pad { display:flex; } }
+
+/* ---- joystick virtuale "flottante": compare dove tocchi dentro la zona #padL ---- */
+#joyBase {
+  position:absolute; left:0; top:0;
+  width:84px; height:84px;
+  border-radius:50%; border:4px solid #ffd23f;
+  background:rgba(26,26,51,.22);
+  touch-action:none; -webkit-tap-highlight-color:transparent;
+  pointer-events:none; /* i tocchi li cattura la zona #padL, non il cerchio */
+  opacity:0;
+  transition: background .08s ease, box-shadow .08s ease, opacity .1s ease;
+}
+#joyBase.active { opacity:1; background:rgba(255,210,63,.18); box-shadow:0 0 18px rgba(255,210,63,.4); }
+#joyKnob {
+  position:absolute; left:50%; top:50%; width:54%; height:54%;
+  margin-left:-27%; margin-top:-27%;
+  border-radius:50%; background:rgba(255,210,63,.65);
+  transition: transform .12s ease;
+  pointer-events:none;
+}
+
+/* ---- pulsante di salto "flottante": stesso trattamento del joystick, compare dove tocchi
+   dentro la zona #padR invece di stare fisso in un punto preciso ---- */
+#btnJ {
+  position:absolute; left:0; top:0;
+  opacity:0;
+  pointer-events:none;   /* i tocchi li cattura la zona #padR, non il pulsante stesso */
+  transition: transform .08s ease, background .08s ease, box-shadow .08s ease, opacity .1s ease;
+}
+#btnJ.active { opacity:1; }
+#joyKnob.dragging { transition:none; }
+
+/* ---- modalità schermo intero (vera o simulata su iPhone) ---- */
+body.fs { overflow:hidden; }
+body.fs h1, body.fs .sub, body.fs #help { display:none; }
+body.fs #wrap, #wrap:fullscreen, #wrap:-webkit-full-screen {
+  position:fixed; inset:0; width:100vw; height:100vh; z-index:50;
+  background:#0d0d1a;
+  display:flex; align-items:center; justify-content:center;
+}
+body.fs #game, #wrap:fullscreen #game, #wrap:-webkit-full-screen #game {
+  border:none; border-radius:0; box-shadow:none;
+  width:min(100vw, calc(100vh * 16 / 9));
+  height:min(100vh, calc(100vw * 9 / 16));
+  max-width:100vw; max-height:100vh;
+}
+
+/* ---- inserimento nome record ---- */
+#nameBox {
+  display:none; position:absolute; z-index:70;
+  left:50%; top:50%; transform:translate(-50%,-50%);
+  background:#1a1a33; border:3px solid #ffd23f; border-radius:12px;
+  padding:22px 26px; text-align:center; line-height:1.6;
+  box-shadow:0 0 60px rgba(0,0,0,.7);
+}
+#nameBox .t { color:#ffd23f; font-weight:bold; font-size:20px; letter-spacing:2px; margin-bottom:10px; }
+#nameInput {
+  width:180px; padding:8px; font-family:inherit; font-size:18px; text-align:center;
+  text-transform:uppercase; background:#0d0d1a; color:#fff;
+  border:2px solid #7ec8e3; border-radius:6px; outline:none;
+}
+#nameOk {
+  display:block; margin:12px auto 0; padding:8px 26px;
+  font-family:inherit; font-size:16px; font-weight:bold; letter-spacing:2px;
+  background:#ffd23f; color:#1a1a33; border:none; border-radius:6px; cursor:pointer;
+}
+
+/* ---- avviso "ruota il telefono" ---- */
+#rotate {
+  display:none; position:fixed; inset:0; z-index:200;
+  background:#0d0d1a; color:#ffd23f;
+  flex-direction:column; align-items:center; justify-content:center;
+  font-size:22px; letter-spacing:2px; text-align:center; line-height:1.8;
+}
+#rotate .ph { font-size:64px; animation: ruota 1.6s ease-in-out infinite; }
+#rotate span { color:#7ec8e3; font-size:15px; }
+@keyframes ruota {
+  0%, 20% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
+}
+@media (pointer:coarse) and (orientation:portrait) { #rotate { display:flex; } }
+
+/* ---- splash screen iniziale ---- */
+#splash {
+  position:fixed; inset:0; z-index:300;
+  background:#0d0d1a;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  transition: opacity .5s ease; cursor:pointer;
+}
+#splash .paw { font-size:44px; margin-bottom:10px; animation: bouncePaw 1s ease-in-out infinite; }
+@keyframes bouncePaw { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-14px);} }
+#splash .logo {
+  font-size:clamp(26px,7vw,52px); color:#ffd23f; letter-spacing:4px;
+  text-shadow:3px 3px 0 #d14b1f, 6px 6px 0 rgba(0,0,0,.4); text-transform:uppercase;
+}
+#splash .bar { width:180px; height:6px; border-radius:3px; background:rgba(255,255,255,.15); margin-top:26px; overflow:hidden; }
+#splash .bar i { display:block; height:100%; width:0%; background:#ffd23f; animation: fillbar 1.1s ease forwards; }
+@keyframes fillbar { to { width:100%; } }
+#splash.hide { opacity:0; pointer-events:none; }
+
+/* ---- pulsante impostazioni ---- */
+#setBtn {
+  position:absolute; top:12px; right:116px; z-index:95;
+  width:44px; height:44px; border-radius:10px;
+  border:2px solid #7ec8e3; background:rgba(26,26,51,.75);
+  color:#7ec8e3; font-size:19px; cursor:pointer; line-height:1;
+}
+#setBtn:hover { background:#1a1a33; }
+/* ---- pulsante potenzia Fio ---- */
+#upgBtn {
+  position:absolute; top:12px; right:168px; z-index:95;
+  width:44px; height:44px; border-radius:10px;
+  border:2px solid #ffd23f; background:rgba(26,26,51,.75);
+  color:#ffd23f; font-size:19px; cursor:pointer; line-height:1;
+}
+#upgBtn:hover { background:#1a1a33; }
+/* ---- pulsante pausa (solo touch: da tastiera c'è il tasto P) ---- */
+#pauseBtn {
+  display:none; position:absolute; top:12px; right:220px; z-index:95;
+  width:44px; height:44px; border-radius:10px;
+  border:2px solid #7eff9e; background:rgba(26,26,51,.75);
+  color:#7eff9e; font-size:19px; cursor:pointer; line-height:1;
+}
+#pauseBtn:hover { background:#1a1a33; }
+/* ---- pulsante "installa l'app" (compare solo se il browser lo permette, o su iPhone/iPad) ---- */
+#installBtn {
+  /* z-index sopra ai pannelli (.panel = 80, come gli altri pulsantini qui sopra): deve restare
+     cliccabile anche quando il menù "scegli il cane" è aperto sopra, visto che è proprio
+     nella schermata del titolo che ha più senso mostrarlo */
+  display:none; position:absolute; top:12px; right:220px; z-index:95;
+  width:44px; height:44px; border-radius:10px;
+  border:2px solid #3ddc84; background:rgba(26,26,51,.75);
+  color:#3ddc84; font-size:19px; cursor:pointer; line-height:1;
+  animation: installPulse 2.2s ease-in-out infinite;
+}
+#installBtn:hover { background:#1a1a33; }
+@keyframes installPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(61,220,132,0); }
+  50% { box-shadow: 0 0 12px rgba(61,220,132,.65); }
+}
+
+/* ---- pannelli overlay (impostazioni, tutorial) — stesso stile del box "nuovo record" ---- */
+.panel {
+  display:none; position:absolute; z-index:80;
+  left:50%; top:50%; transform:translate(-50%,-50%);
+  background:#1a1a33; border:3px solid #ffd23f; border-radius:12px;
+  padding:20px 26px; text-align:center; line-height:1.5;
+  box-shadow:0 0 60px rgba(0,0,0,.7);
+  max-width:88vw; max-height:82vh; overflow:auto;
+}
+.panel .t { color:#ffd23f; font-weight:bold; font-size:18px; letter-spacing:2px; margin-bottom:12px; }
+.panel .t2 { color:#ffd23f; font-weight:bold; font-size:14px; letter-spacing:1px; margin:16px 0 8px; }
+.panel .row { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:12px 0; font-size:13px; color:#fff; white-space:nowrap; }
+.panel input[type=range] { width:140px; accent-color:#ffd23f; }
+.panel .chipRow { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+.panel .diffBtn {
+  font-family:inherit; font-size:12px; letter-spacing:1px; padding:7px 12px; border-radius:8px;
+  border:2px solid #555a77; background:rgba(0,0,0,.2); color:#aaa; cursor:pointer;
+}
+.panel .diffBtn.sel { border-color:#ffd23f; color:#ffd23f; }
+.panel button.ok {
+  display:block; margin:18px auto 0; padding:8px 26px;
+  font-family:inherit; font-size:15px; font-weight:bold; letter-spacing:2px;
+  background:#ffd23f; color:#1a1a33; border:none; border-radius:6px; cursor:pointer;
+}
+.panel p { font-size:13px; color:#cfd6ea; margin:0; text-align:left; }
+.panel p b { color:#ffd23f; }
+
+/* ---- pannello "potenzia il cane": righe statistica con pulsante di acquisto ---- */
+#upgradeBox { width:min(88vw, 460px); }
+#upgradeBox .bones { color:#ffd23f; font-size:15px; margin-bottom:14px; text-align:center; }
+#upgradeBox .bones b { font-size:18px; }
+
+/* ---- pannello "trofei & aspetto": lista trofei scorrevole (il .panel scrolla già da solo,
+   vedi max-height/overflow qui sopra) + scheda sfida del giorno + griglia cosmetici ---- */
+#trophyBox { width:min(92vw, 560px); text-align:left; }
+#trophyBox .t { text-align:center; }
+.trTabRow { display:flex; gap:8px; justify-content:center; margin-bottom:12px; }
+.trTab {
+  font-family:inherit; font-size:12px; letter-spacing:1px; padding:8px 16px; border-radius:20px;
+  border:2px solid #555a77; background:rgba(0,0,0,.2); color:#aaa; cursor:pointer;
+}
+.trTab.sel { border-color:#ffd23f; color:#ffd23f; background:rgba(255,210,63,.1); }
+.dailyCard {
+  border:2px solid #7ec8e3; border-radius:10px; padding:10px 14px; margin-bottom:10px;
+  background:rgba(126,200,227,.08);
+}
+.dailyCard .dt { color:#7ec8e3; font-weight:bold; font-size:12px; letter-spacing:1px; margin-bottom:4px; }
+.dailyCard .dd2 { color:#fff; font-size:13px; }
+.dailyCard .dr { color:#9aa3c0; font-size:11px; margin-top:4px; }
+.dailyCard.done { border-color:#3ddc84; background:rgba(61,220,132,.1); }
+.dailyCard.done .dd2 { color:#3ddc84; }
+.trSub { color:#7ec8e3; font-size:13px; text-align:center; margin:4px 0 10px; }
+.achRow {
+  display:flex; align-items:center; gap:10px; padding:8px 4px;
+  border-top:1px solid rgba(126,200,227,.15);
+}
+.achRow:first-child { border-top:none; }
+.achStar { font-size:18px; flex:0 0 auto; width:22px; text-align:center; }
+.achName { font-weight:bold; font-size:13px; }
+.achDesc { font-size:11px; color:#9aa3c0; margin-top:1px; }
+.cosPreviewRow { display:flex; justify-content:center; margin-bottom:10px; }
+.cosGrid { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:6px; }
+.cosItem {
+  position:relative; width:54px; text-align:center; cursor:pointer;
+  padding:6px 4px; border-radius:10px; border:2px solid rgba(255,255,255,.14);
+}
+.cosItem.eq { border-color:#ffd23f; background:rgba(255,210,63,.12); }
+.cosItem.lockedCos { cursor:default; opacity:.55; }
+.cosSwatch {
+  width:26px; height:26px; border-radius:50%; margin:0 auto 4px;
+  border:2px solid rgba(255,255,255,.3);
+}
+.cosItem .cosIcon { font-size:20px; margin-bottom:2px; }
+.cosItem .cosLabel { font-size:9px; color:#cfd6ea; line-height:1.15; }
+.cosItem .cosCheck {
+  position:absolute; top:-6px; right:-6px; width:16px; height:16px; border-radius:50%;
+  background:#ffd23f; color:#1a1a33; font-size:10px; font-weight:bold;
+  display:flex; align-items:center; justify-content:center;
+}
+.cosItem .cosLock { font-size:10px; color:#7ec8e3; margin-top:2px; }
+
+/* ---- menù iniziale "scegli il tuo cane": si apre da solo, niente osso da premere.
+   Layout a colonna con intestazione e pulsante GIOCA sempre fissi (mai fuori schermo):
+   solo la riga dei cani scorre, così su un telefono basso in orizzontale il pulsante
+   per iniziare resta sempre raggiungibile anche se non si vedono tutte le razze subito ---- */
+#dogSelectBox {
+  width:min(94vw, 640px); max-height:82vh;
+  padding:14px 16px;
+}
+#dogSelectBox .t { margin-bottom:8px; }
+#dogSelectBox .hint { font-size:11px; color:#9aa3c0; margin-top:8px; }
+#dogSelectBox button.ok { margin-top:10px; }
+.playRow { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+.playRow button.ok { flex:0 0 auto; }
+button.ok.mp { background:transparent; border:2px solid #8a6bff; color:#8a6bff; }
+
+/* ---- sfida online: ricerca avversario e risultato finale ---- */
+#mpSearchBox, #mpResultBox { width:min(90vw, 400px); }
+.mpSpinner { font-size:40px; margin:10px 0; animation: mpspin 1.1s linear infinite; }
+@keyframes mpspin { from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
+#mpSearchText { text-align:center; font-size:13px; color:#cfd6ea; }
+button.ok.cancel { background:transparent; border:2px solid #ff5a5a; color:#ff5a5a; }
+.mpScoreRow { display:flex; align-items:center; justify-content:center; gap:16px; margin:14px 0; }
+.mpScoreCol { text-align:center; min-width:100px; }
+.mpScoreName { font-size:12px; color:#7ec8e3; letter-spacing:1px; margin-bottom:4px; }
+.mpScoreVal { font-size:36px; font-weight:bold; color:#ffd23f; }
+.mpScoreVs { font-size:18px; color:#555a77; }
+#mpRematchStatus { text-align:center; font-size:12px; color:#7ec8e3; min-height:14px; margin:0 0 6px; }
+#mpResultBox .playRow button.ok { margin-top:0; }
+#mpRematchBtn:disabled { opacity:0.5; cursor:default; }
+
+/* ---- balletto di vittoria: solo quando ho vinto io, sopra al punteggio finale ---- */
+.mpDanceRow { display:none; justify-content:center; gap:10px; font-size:26px; margin:2px 0 8px; }
+.mpDanceRow.show { display:flex; }
+.mpDanceRow span { display:inline-block; animation: mpDance .6s ease-in-out infinite; }
+.mpDanceRow span:nth-child(1){ animation-delay:0s; }
+.mpDanceRow span:nth-child(2){ animation-delay:.1s; }
+.mpDanceRow span:nth-child(3){ animation-delay:.2s; }
+.mpDanceRow span:nth-child(4){ animation-delay:.3s; }
+.mpDanceRow span:nth-child(5){ animation-delay:.4s; }
+@keyframes mpDance {
+  0%, 100% { transform: translateY(0) rotate(-10deg); }
+  50% { transform: translateY(-14px) rotate(10deg); }
+}
+.mpScoreCol.mpWinner .mpScoreVal { color:#3ddc84; animation: mpWinPulse .7s ease-in-out infinite; }
+@keyframes mpWinPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+/* la riga dei cani ha un'altezza propria e scorrevole (in entrambe le direzioni): così, anche su
+   un telefono molto basso in orizzontale, titolo, suggerimento e pulsante GIOCA restano sempre
+   visibili e non finiscono mai fuori schermo dentro un pannello che scorre per intero */
+.dogRow {
+  max-height:min(260px, 46vh);
+  display:flex; align-items:flex-start; gap:10px; overflow:auto; padding:6px 4px 10px;
+  -webkit-overflow-scrolling:touch;
+}
+.dogCard {
+  position:relative; flex:0 0 auto; width:128px; padding:12px 8px 10px; border-radius:14px;
+  border:2px solid rgba(255,255,255,.14); text-align:center; cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.35);
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.dogCard:hover { transform:translateY(-2px); }
+.dogCard.selected {
+  border-color:#ffd23f;
+  box-shadow:0 0 0 2px rgba(255,210,63,.35), 0 6px 18px rgba(255,210,63,.25);
+}
+.dogCard.locked { cursor:default; }
+.dogCheck {
+  position:absolute; top:-8px; right:-8px; width:22px; height:22px; border-radius:50%;
+  background:#ffd23f; color:#1a1a33; font-size:13px; font-weight:bold;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+.dogMedallion {
+  position:relative; width:64px; height:64px; margin:0 auto 6px;
+  border-radius:50%; background:radial-gradient(circle at 50% 35%, rgba(255,255,255,.14), rgba(0,0,0,.25) 72%);
+  border:2px solid rgba(255,255,255,.2);
+  display:flex; align-items:center; justify-content:center;
+}
+.dogCard.selected .dogMedallion { border-color:#ffd23f; }
+.dogPortrait { width:56px; height:56px; }
+.dogLock {
+  position:absolute; bottom:-2px; right:-2px; width:20px; height:20px; border-radius:50%;
+  background:#1a1a33; border:2px solid #555a77; font-size:10px;
+  display:flex; align-items:center; justify-content:center;
+}
+.dogName { color:#fff; font-weight:bold; font-size:13px; letter-spacing:.5px; }
+.dogTag {
+  display:inline-block; margin-top:4px; padding:2px 8px; border-radius:20px;
+  font-size:9px; font-weight:bold; letter-spacing:.5px; white-space:nowrap;
+}
+.dogDesc { color:#9aa3c0; font-size:10px; margin-top:6px; line-height:1.3; }
+.dogCard.locked .dogDesc { color:#7ec8e3; }
+.dogBars { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
+.dogBarRow { display:flex; align-items:center; gap:4px; }
+.dogBarIcon { font-size:9px; width:13px; flex:0 0 auto; text-align:center; }
+.dogBarTrack { flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,.12); overflow:hidden; position:relative; }
+.dogBarFill { height:100%; border-radius:3px; }
+/* segmento extra che mostra quanto i potenziamenti a ossa (universali, uguali per ogni razza)
+   allungano la barra oltre il valore "puro" di razza mostrato da .dogBarFill */
+.dogBarBonus {
+  position:absolute; top:0; height:100%;
+  background: repeating-linear-gradient(45deg, rgba(255,255,255,.9) 0 2px, rgba(255,255,255,.4) 2px 4px);
+  box-shadow: -1px 0 0 rgba(255,255,255,.95);
+}
+.statRow {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 4px; border-top:1px solid rgba(126,200,227,.2); text-align:left;
+}
+.statRow:first-of-type { border-top:none; }
+.statInfo { display:flex; align-items:center; gap:10px; min-width:0; }
+.statIcon { font-size:24px; flex:0 0 auto; }
+.statName { color:#fff; font-weight:bold; font-size:14px; }
+.statLvl { color:#7ec8e3; font-weight:normal; font-size:12px; }
+.statDesc { color:#9aa3c0; font-size:11px; margin-top:2px; }
+.statBuy {
+  flex:0 0 auto; font-family:inherit; font-size:11px; font-weight:bold; letter-spacing:.5px;
+  padding:8px 10px; border-radius:8px; border:2px solid #ffd23f; background:rgba(255,210,63,.12);
+  color:#ffd23f; cursor:pointer; white-space:nowrap;
+}
+.statBuy:disabled { border-color:#555a77; color:#777d99; background:transparent; cursor:default; }
+
+/* ---- pulsante condividi (solo game over) ---- */
+#shareBtn {
+  display:none; position:absolute; z-index:56; bottom:6%;
+  left:50%; transform:translateX(-50%);
+  font-family:inherit; font-size:13px; letter-spacing:1px; padding:8px 18px; border-radius:20px;
+  border:2px solid #7ec8e3; background:rgba(26,26,51,.82); color:#7ec8e3; cursor:pointer;
+}
+/* ---- pulsante "torna al menu" (solo in pausa): serve soprattutto per uscire dall'allenamento,
+   dove non esiste un game over naturale, ma funziona per uscire in qualsiasi momento ---- */
+#quitBtn {
+  display:none; position:absolute; z-index:81; top:72%;
+  left:50%; transform:translate(-50%,-50%);
+  font-family:inherit; font-size:14px; letter-spacing:1px; padding:9px 20px; border-radius:20px;
+  border:2px solid #ff5a5a; background:rgba(26,26,51,.88); color:#ff5a5a; cursor:pointer;
+}
